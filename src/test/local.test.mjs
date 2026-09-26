@@ -9,7 +9,7 @@ import { syncArchive } from '../lib/sync.mjs';
 import { authenticatedGet } from '../integrations/cosense/client.mjs';
 import { loadArchive } from '../lib/archive.mjs';
 import { openIndex, indexState, rebuildIndex, search, links } from '../lib/search-index.mjs';
-import { startSession, commitArchive } from '../lib/session.mjs';
+import { startSession, commitArchive, archiveStatus } from '../lib/session.mjs';
 
 const projectUrl = 'https://scrapbox.io/example';
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -301,6 +301,25 @@ const session = (root, mode, options = {}) => {
   return startSession(root, { projectUrl, syncMode: mode }, { print: text => messages.push(text), ...options })
     .then(ok => ({ ok, output: messages.join('\n') }));
 };
+
+test('status does not substitute acquisition time for missing or malformed sync metadata', async t => {
+  const root = fixture(t);
+  await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
+  const archive = loadArchive(root, projectUrl);
+  const path = join(root, '.local/sync.json');
+  rmSync(path);
+  assert.equal(archiveStatus(root, projectUrl, archive).checkedAt, null);
+  for (const text of ['{broken', 'null', '{}', JSON.stringify({ projectUrl: 'https://scrapbox.io/other', checkedAt: archive.data.syncedAt }),
+    JSON.stringify({ projectUrl, checkedAt: archive.data.syncedAt, legacy: true })]) {
+    writeFileSync(path, text);
+    assert.throws(() => archiveStatus(root, projectUrl, archive));
+    const result = await session(root, 'none');
+    assert.equal(result.ok, false); assert.match(result.output, /差分確認日時は不明/);
+    assert.match(result.output, /"checkedAt": null/);
+    assert.ok(result.output.includes(archive.data.syncedAt));
+    assert.match(result.output, /ローカルで参照できます/);
+  }
+});
 
 test('session none is offline with no archive; fetch creates and incrementally refreshes articles without commits', async t => {
   const root = fixture(t);

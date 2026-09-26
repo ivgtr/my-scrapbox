@@ -13,6 +13,9 @@ export function readConfig(root) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     throw new Error('cosense.config.json はオブジェクトで指定してください。');
   }
+  if (Object.keys(config).some(key => !['projectUrl', 'syncMode'].includes(key))) {
+    throw new Error('cosense.config.json で指定できる項目は projectUrl と syncMode のみです。未知の項目を削除してください。');
+  }
   const syncMode = config.syncMode === undefined ? 'none' : config.syncMode;
   if (!['none', 'fetch', 'commit'].includes(syncMode)) {
     throw new Error('syncMode は none、fetch、commit のいずれかを指定してください。');

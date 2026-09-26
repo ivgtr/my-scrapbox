@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { readConfig, resolveArgs } from '../lib/config.mjs';
+import { settingsDeclaration } from '../integrations/cosense/settings.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'cosense-template-test-'));
@@ -22,9 +23,9 @@ test('unset personal configuration permits help but blocks project shortcuts', t
     ['readPage', 'https://scrapbox.io/example/page']);
 });
 
-test('personal project resolves and legacy memoryTitle is ignored', t => {
+test('current personal configuration resolves project shortcuts and rejects the removed memory shortcut', t => {
   const f = fixture(t);
-  f.write({ projectUrl: 'https://scrapbox.io/example/', memoryTitle: '記憶 & Decisions' });
+  f.write({ projectUrl: 'https://scrapbox.io/example/' });
   const config = readConfig(f.root);
   assert.equal(config.projectUrl, 'https://scrapbox.io/example');
   assert.deepEqual(config, { projectUrl: 'https://scrapbox.io/example', syncMode: 'none' });
@@ -37,11 +38,9 @@ test('invalid configuration fails before the CLI can contact an account', t => {
   for (const projectUrl of ['https://scrapbox.io/YOUR_PROJECT', 'https://example.com/wiki',
     'https://scrapbox.io/a/page', 'https://scrapbox.io/a?token=example',
     'https://user:password@scrapbox.io/a', 'not-a-url']) {
-    f.write({ projectUrl, memoryTitle: 'Agent Memory' });
+    f.write({ projectUrl });
     assert.throws(() => readConfig(f.root), /projectUrl/);
   }
-  f.write({ projectUrl: 'https://scrapbox.io/example', memoryTitle: ' ' });
-  assert.equal(readConfig(f.root).projectUrl, 'https://scrapbox.io/example');
   writeFileSync(join(f.dir, 'cosense.config.json'), '{');
   assert.throws(() => readConfig(f.root), /JSON/);
 });
@@ -50,12 +49,12 @@ test('a fork launcher uses its own configuration and credentials from any workin
   const f = fixture(t);
   cpSync(new URL('../', import.meta.url), join(f.dir, 'src'), { recursive: true });
   writeFileSync(join(f.dir, 'package.json'), '{"type":"module"}');
-  f.write({ projectUrl: 'https://scrapbox.io/example', memoryTitle: 'Agent Memory' });
+  f.write({ projectUrl: 'https://scrapbox.io/example' });
   const cli = join(f.dir, 'node_modules/@helpfeel/cosense-cli');
   mkdirSync(join(cli, 'src/lib'), { recursive: true });
   mkdirSync(join(cli, 'bin'), { recursive: true });
   writeFileSync(join(cli, 'package.json'), JSON.stringify({ version: '1.15.0' }));
-  writeFileSync(join(cli, 'src/lib/settings.ts'), "const SETTINGS_PATH = process.env.COSENSE_SETTINGS_PATH || join(homedir(), '.cosense', 'settings.json');");
+  writeFileSync(join(cli, 'src/lib/settings.ts'), settingsDeclaration);
   writeFileSync(join(cli, 'bin/cosense'), `
     console.log(JSON.stringify({ args: process.argv.slice(2),
       settings: process.env.COSENSE_SETTINGS_PATH, hasPat: 'COSENSE_PAT' in process.env }));
@@ -70,6 +69,15 @@ test('a fork launcher uses its own configuration and credentials from any workin
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), { args: expected,
       settings: join(f.dir, '.local/cosense/settings.json'), hasPat: false });
+  }
+});
+
+test('removed and unknown configuration keys are rejected instead of ignored', t => {
+  const f = fixture(t);
+  for (const extra of [{ memoryTitle: 'Agent Memory' }, { memoryTitle: null }, { syncmode: 'fetch' }, { token: 'test-only' }]) {
+    f.write({ projectUrl: 'https://scrapbox.io/example', ...extra });
+    assert.throws(() => readConfig(f.root), /projectUrl と syncMode のみ/);
+    assert.throws(() => resolveArgs(['listPages', '@project'], f.root), /未知の項目/);
   }
 });
 

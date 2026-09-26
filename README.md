@@ -31,7 +31,7 @@ PATはCLIの案内に従ってターミナルへ入力してください。チ�
 npm run session:start
 ```
 
-`syncMode` は未指定なら `none` です。不正な値は実行前に拒否します。
+設定項目は `projectUrl`（必須）と `syncMode`（省略可能）のみです。`syncMode` は未指定なら `none` です。不正な値・未知の項目は実行前に拒否します。
 
 | 値 | セッション開始時の動作 |
 | --- | --- |
@@ -44,6 +44,8 @@ npm run session:start
 手動の `npm run sync` は設定に関係なく取得・更新だけを行います。`npm run memory` と `npm run status` も個別に実行できます。
 
 `status` はローカルの件数・同期日時・索引状態を表示します。Scrapboxとの差分確認と反映は `sync` が行います。初回は全件を取得し、以降は追加・更新・タイトル変更・削除を反映します。差分の確認にはネットワーク接続と認証が必要です。
+
+同期状態ファイルがない場合の `checkedAt` は `null`（不明）です。不正な状態はエラーとして報告し、記事の取得日時を差分確認日時の代わりには使いません。
 
 同期済みの記事はローカルで検索・参照できます。同期していない変更は表示されません。
 
@@ -93,6 +95,6 @@ git commit -m "Save local knowledge and memory"
 
 `src/cli/` はコマンド入口、`src/lib/` は機能本体、`src/integrations/cosense/` は公式CLI連携、`src/test/` は検証です。`npm test` で、実アカウントを使わず同期・障害時の保持・オフライン参照・Git運用を確認できます。
 
-CLIは `@helpfeel/cosense-cli` 1.15.0、公式Skillは上流commit `c94c481d29ae7cc51db64bd42fadcd7292f6b7cd` に固定しています。認証情報を `.local/cosense/settings.json` に保存するため、インストール時に互換パッチを適用します。親シェルのPATは使用しません。`npm ci --ignore-scripts` を使った場合は `npm rebuild` が必要です。CLI・Skill更新時はパッチの互換性を確認し、上流が保存先指定に対応したら廃止します。
+CLIは `@helpfeel/cosense-cli` 1.15.0、公式Skillは上流commit `c94c481d29ae7cc51db64bd42fadcd7292f6b7cd` に固定しています。認証情報を `.local/cosense/settings.json` に保存するため、インストール時に保存先パッチを適用します。保存先指定は必須で、ホームの認証設定へのフォールバックはありません。親シェルのPATは使用しません。`npm ci --ignore-scripts` を使った場合は `npm rebuild` が必要です。古いパッチが適用済みの場合は `npm ci` で入れ直してください。CLI・Skill更新時はパッチの互換性を確認し、上流が保存先指定に対応したら廃止します。
 
-旧設定の `memoryTitle` は使用しません。`@memory` は廃止し、`npm run memory` を使います。
+`memoryTitle` を含む設定と `@memory` はエラーになります。記憶の入口は `npm run memory` で読みます。

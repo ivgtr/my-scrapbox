@@ -1,7 +1,7 @@
 # ローカル知識とAgent記憶を使う
 
 - 日本語で簡潔に、結果と理由から伝える。
-- 記事の正本はScrapbox、Agent記憶の正本はローカルの `memory/index.md` とそこからリンクするMarkdown。個人設定は `cosense.config.json` の `projectUrl`。未設定なら初期化を案内し、アカウントやプロジェクトを推測しない。旧 `memoryTitle` は使用しない。
+- 記事の正本はScrapbox、Agent記憶の正本はローカルの `memory/index.md` とそこからリンクするMarkdown。個人設定は `cosense.config.json` の `projectUrl`（必須）と `syncMode`（省略可能）のみ。`memoryTitle` を含む未知の項目は拒否する。未設定なら初期化を案内し、アカウントやプロジェクトを推測しない。
 - 新しいセッションは最初に `npm run session:start` で記憶の入口・同期状態・実行結果・取得時点を読み、依頼に関係する詳細だけ参照する。`cosense.config.json` の `syncMode` は未指定なら `none`（オフライン表示と同期案内）、`fetch` は記事・索引を同期、`commit` は同期成功後の記事だけをcommitする。自動化はこの入口だけに限定する。記憶が未作成なら記憶なしとして進め、閲覧だけの依頼では作成しない。Scrapboxとの差分はローカル状態から推測しない。手動の `npm run sync` はモードに関係なく取得・更新だけを行う。
 - 通常の参照はネットワークを使わず `npm run search -- "検索語"`、`npm run read -- "タイトル"`、`npm run links -- "タイトル"` を使う。状態は `npm run status`。記事がない・古い場合は限界を報告し、同期が必要な依頼の範囲で `npm run sync` を実行する。
 - `archive/articles.json` は参照専用。直接編集・ローカルからの書き戻しを禁止する。索引は `.local/` に置き、必要なら `npm run index:rebuild` で再生成する。アーカイブの破損は `npm run sync -- --rebuild` で復旧する。

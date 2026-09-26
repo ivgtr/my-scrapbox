@@ -50,6 +50,15 @@ test('launcher forces the local settings path and forwards arguments from anothe
   assert.ok(!result.stdout.includes('/invalid/parent/settings.json'));
 });
 
+test('official settings refuse an unset path instead of reading home credentials', () => {
+  const result = run(['--input-type=module', '--eval', `
+    import { tsImport } from 'tsx/esm/api';
+    await tsImport(${JSON.stringify(settingsUrl)}, import.meta.url);
+  `], { COSENSE_SETTINGS_PATH: '' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /COSENSE_SETTINGS_PATH is required/);
+});
+
 test('launcher isolates inherited PAT and does not authenticate without local credentials', t => {
   // This test is for initial setup only; skip once the user has logged in.
   try {

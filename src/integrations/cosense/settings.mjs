@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const cliVersion = '1.15.0';
-export const settingsDeclaration = "const SETTINGS_PATH = process.env.COSENSE_SETTINGS_PATH || join(homedir(), '.cosense', 'settings.json');";
+export const settingsDeclaration = "const SETTINGS_PATH = process.env.COSENSE_SETTINGS_PATH;\nif (!SETTINGS_PATH) throw new Error('COSENSE_SETTINGS_PATH is required; use npm run cosense -- ...');";
 export const settingsPath = root => join(root, '.local/cosense/settings.json');
 
 export function cliEnvironment(root, inherited = process.env) {
@@ -18,7 +18,7 @@ export function assertPatchedCli(root) {
       throw new Error('Cosense CLIのバージョンが変更されています。保存先パッチの互換性を確認してください。');
     }
     if (!readFileSync(join(cliRoot, 'src/lib/settings.ts'), 'utf8').includes(settingsDeclaration)) {
-      throw new Error('保存先パッチが未適用です。npm rebuild を実行してください。');
+      throw new Error('現行の保存先パッチが未適用です。npm ci を実行してください。');
     }
   } catch (error) {
     if (error.code === 'ENOENT') throw new Error('npm ci を実行してください。');

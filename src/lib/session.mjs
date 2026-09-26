@@ -12,12 +12,18 @@ const git = (root, args) => execFileSync('git', args, {
 }).trim();
 
 export function archiveStatus(root, projectUrl, archive, onWarning) {
-  let checkedAt = archive.data.syncedAt;
+  let checkedAt = null;
   try {
     const state = JSON.parse(readFileSync(join(root, '.local/sync.json'), 'utf8'));
-    if (state?.projectUrl === projectUrl && Number.isFinite(Date.parse(state.checkedAt))) checkedAt = state.checkedAt;
+    if (!state || typeof state !== 'object' || Array.isArray(state) ||
+        Object.keys(state).some(key => !['projectUrl', 'checkedAt'].includes(key)) ||
+        state.projectUrl !== projectUrl || typeof state.checkedAt !== 'string' ||
+        !Number.isFinite(Date.parse(state.checkedAt))) {
+      throw new Error('同期状態が不正です。npm run sync で再取得してください。');
+    }
+    checkedAt = state.checkedAt;
   } catch (error) {
-    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+    if (error.code !== 'ENOENT') {
       if (!onWarning) throw error;
       onWarning(error);
     }
@@ -89,7 +95,7 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
   } else {
     try {
       print(JSON.stringify(archiveStatus(root, projectUrl, loadArchive(root, projectUrl), error => {
-        print(`同期状態を読み取れません。アーカイブの取得日時を表示します: ${error.message}`);
+        print(`同期状態を読み取れません。差分確認日時は不明です。npm run sync を実行してください: ${error.message}`);
         ok = false;
       }), null, 2));
       print('表示した取得時点の記事をローカルで参照できます。');
