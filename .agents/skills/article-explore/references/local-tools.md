@@ -60,4 +60,4 @@ npm run memory:evidence -- <id>
 
 memory:readはmetadata・body・evidence、memory:evidenceは再帰的な根拠情報をJSONで返す。evidenceのneedsRecheckと各sourcesのstatusを確認する。記事版・行・記憶revisionの変化は再確認が必要。currentの原文は現行取得分であり、古い参照版の復元ではない。dialogueのrecordedは発言抜粋の保存、unknown-timeは日時不明を表し、外部事実の保証ではない。sourcesが空の場合も解釈の正しさを保証しない。
 
-記憶の形成・訂正が依頼範囲に入る場合だけ、READMEの「構造化した記憶の操作」にある現行入力スキーマと保存条件を参照する。保存前に現行記録と原文を確認し、updateにはexpect-revisionを渡す。参照・検索だけでは保存しない。
+記憶の形成・訂正が依頼範囲に入る場合だけ、[構造化記憶の資料](memory.md)にある現行入力スキーマと保存条件を参照する。保存前に現行記録と原文を確認し、updateにはexpect-revisionを渡す。参照・検索だけでは保存しない。
