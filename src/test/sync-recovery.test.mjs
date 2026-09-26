@@ -48,6 +48,68 @@ test('all requests are serialized and spaced, including concurrent callers', asy
   assert.equal(maxActive, 1); assert.deepEqual(starts.map(time => time - starts[0]), [0, 1000, 2000]);
 });
 
+test('request spacing never passes a negative delay when clock reads cross the deadline', async t => {
+  const samples = [0, 0, 999.999, 1000.002797, 1000.003, 1000.004];
+  const starts = []; const sleeps = []; let latest = 0;
+  const clock = {
+    now: () => 0,
+    monotonic: () => (latest = samples.shift() ?? 1001),
+    sleep: async ms => { assert.ok(ms > 0); sleeps.push(ms); }
+  };
+  const get = controlledGet(fixture(t), projectUrl, async () => { starts.push(latest); }, options(clock));
+  await get('first'); await get('second');
+  assert.deepEqual(sleeps, [1]);
+  assert.ok(starts[1] - starts[0] >= 1000);
+});
+
+test('request spacing handles fractional remaining time, expired deadlines and early wakeups', async t => {
+  for (const elapsed of [999.75, 1000, 1000.25, 0]) {
+    const clock = fakeClock(0); const starts = [];
+    const sleep = clock.sleep.bind(clock); let early = elapsed === 0;
+    clock.sleep = async ms => {
+      assert.ok(ms > 0 && Number.isInteger(ms));
+      if (early) { early = false; clock.sleeps.push(ms); clock.advance(400); }
+      else await sleep(ms);
+    };
+    const get = controlledGet(fixture(t), projectUrl, async () => {
+      starts.push(clock.monotonic());
+      if (starts.length === 1) clock.advance(elapsed);
+    }, options(clock));
+    await get('first'); await get('second');
+    assert.ok(starts[1] - starts[0] >= 1000);
+    assert.deepEqual(clock.sleeps, elapsed === 0 ? [1000, 600] : elapsed < 1000 ? [1] : []);
+  }
+});
+
+test('persisted 429 cooldown never passes a negative delay when clock reads cross its deadline', async t => {
+  const root = fixture(t); const deadline = Date.parse('2026-09-26T10:00:00Z');
+  mkdirSync(join(root, '.local'));
+  writeFileSync(cooldownPath(root), JSON.stringify({ version: 1, projectUrl, notBefore: new Date(deadline).toISOString() }));
+  const samples = [deadline - 1, deadline + 1]; const sleeps = []; let latest;
+  const clock = { now: () => (latest = samples.shift() ?? deadline + 1), monotonic: () => 0,
+    sleep: async ms => { assert.ok(ms > 0); sleeps.push(ms); } };
+  const get = controlledGet(root, projectUrl, async () => { assert.ok(latest >= deadline); return 'ok'; }, options(clock));
+  assert.equal(await get('url'), 'ok'); assert.deepEqual(sleeps, [1]);
+});
+
+test('429 cooldown handles fractional remaining time, expired deadlines and early wakeups', async t => {
+  const deadline = Date.parse('2026-09-26T10:00:00Z');
+  for (const remaining of [0.25, 0, -1, 1000]) {
+    const root = fixture(t); const clock = fakeClock(deadline - remaining);
+    mkdirSync(join(root, '.local'));
+    writeFileSync(cooldownPath(root), JSON.stringify({ version: 1, projectUrl, notBefore: new Date(deadline).toISOString() }));
+    const sleep = clock.sleep.bind(clock); let early = remaining === 1000;
+    clock.sleep = async ms => {
+      assert.ok(ms > 0 && Number.isInteger(ms));
+      if (early) { early = false; clock.sleeps.push(ms); clock.advance(400); }
+      else await sleep(ms);
+    };
+    const get = controlledGet(root, projectUrl, async () => { assert.ok(clock.now() >= deadline); return 'ok'; }, options(clock));
+    assert.equal(await get('url'), 'ok');
+    assert.deepEqual(clock.sleeps, remaining === 1000 ? [1000, 600] : remaining > 0 ? [1] : []);
+  }
+});
+
 test('429 has exactly three retries and persists the next wait across runs', async t => {
   const root = fixture(t); const clock = fakeClock(); let calls = 0;
   const get = controlledGet(root, projectUrl, async () => { calls++; throw new HttpError(429); }, options(clock));

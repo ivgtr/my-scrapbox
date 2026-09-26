@@ -44,8 +44,10 @@ export function controlledGet(root, projectUrl, get, { clock = systemClock, onPr
   let queue = Promise.resolve();
   const stop = reason => new Error(`HTTP 429: ${reason}のため停止しました。次回試行の目安: ${state.notBefore}。この時刻以降に npm run sync で再開してください。制限解除を保証する時刻ではありません。`);
   async function cooldown() {
-    while (state.notBefore !== null && Date.parse(state.notBefore) > clock.now()) {
-      const delay = Date.parse(state.notBefore) - clock.now();
+    while (state.notBefore !== null) {
+      const remaining = Date.parse(state.notBefore) - clock.now();
+      if (remaining <= 0) break;
+      const delay = Math.ceil(remaining);
       if (waited + delay > waitBudget) throw stop('累計待機の上限60秒を超えます');
       onProgress(`HTTP 429: ${Math.ceil(delay / 1000)}秒待機します。次回試行の目安: ${state.notBefore}`);
       const start = clock.monotonic();
@@ -56,7 +58,11 @@ export function controlledGet(root, projectUrl, get, { clock = systemClock, onPr
   async function request(url) {
     for (let attempt = 0; ; attempt++) {
       await cooldown();
-      while (clock.monotonic() - lastStart < 1000) await clock.sleep(1000 - (clock.monotonic() - lastStart));
+      for (;;) {
+        const remaining = 1000 - (clock.monotonic() - lastStart);
+        if (remaining <= 0) break;
+        await clock.sleep(Math.ceil(remaining));
+      }
       lastStart = clock.monotonic();
       try { return await get(url); }
       catch (error) {
