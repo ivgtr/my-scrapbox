@@ -5,11 +5,14 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, existsSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initWorkspace } from '../lib/workspace.mjs';
-import { syncArchive } from '../lib/sync.mjs';
+import { syncArchive as runSync } from '../lib/sync.mjs';
 import { authenticatedGet } from '../integrations/cosense/client.mjs';
 import { loadArchive } from '../lib/archive.mjs';
 import { openIndex, indexState, rebuildIndex, search, links } from '../lib/search-index.mjs';
 import { startSession, commitArchive, archiveStatus } from '../lib/session.mjs';
+import { fakeClock } from './support/clock.mjs';
+
+const syncArchive = (root, projectUrl, options) => runSync(root, projectUrl, { clock: fakeClock(), onProgress: () => {}, ...options });
 
 const projectUrl = 'https://scrapbox.io/example';
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -298,7 +301,7 @@ test('malformed authentication settings never fall back to a valid PAT', t => {
 
 const session = (root, mode, options = {}) => {
   const messages = [];
-  return startSession(root, { projectUrl, syncMode: mode }, { print: text => messages.push(text), ...options })
+  return startSession(root, { projectUrl, syncMode: mode }, { clock: fakeClock(), onProgress: () => {}, print: text => messages.push(text), ...options })
     .then(ok => ({ ok, output: messages.join('\n') }));
 };
 

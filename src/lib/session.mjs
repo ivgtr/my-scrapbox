@@ -47,7 +47,7 @@ export function commitArchive(root, projectUrl) {
 }
 
 export async function startSession(root, { projectUrl, syncMode = 'none' }, {
-  get, now, print = console.log, buildIndex = (root, archive) => openIndex(root, archive).close()
+  get, now, clock, onProgress = console.error, print = console.log, buildIndex = (root, archive) => openIndex(root, archive).close()
 } = {}) {
   if (!['none', 'fetch', 'commit'].includes(syncMode)) {
     throw new Error('syncMode は none、fetch、commit のいずれかを指定してください。');
@@ -68,11 +68,11 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
     print('同期は行いません。Scrapboxとの差分確認・反映には npm run sync を実行してください。');
   } else {
     let result;
-    try { result = await syncArchive(root, projectUrl, { get, now }); }
+    try { result = await syncArchive(root, projectUrl, { get, now, clock, onProgress }); }
     catch (error) {
       result = error.syncResult;
-      if (result) print(`記事取得は成功しましたが同期状態の保存に失敗しました: ${error.message}`);
-      else print(`同期失敗。既存記事を保持します: ${error.message}`);
+      if (result) print(error.message);
+      else print(`同期失敗: ${error.message}`);
       ok = false;
     }
     if (result) {
@@ -82,7 +82,7 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
       if (syncMode === 'commit') {
         try { print(commitArchive(root, projectUrl) ? '記事アーカイブをcommitしました。' : '記事アーカイブはHEADと一致しています。commit不要です。'); }
         catch (error) {
-          print(`記事取得は成功しましたがcommitに失敗しました: ${error.message}`);
+          print(`記事取得は成功しましたがcommitに失敗しました: ${error.message}\nGit状態と本人設定・フックを確認してから npm run session:start を実行してください。`);
           try { print(`commit失敗後のGit状態:\n${git(root, ['status', '--short']) || '変更なし'}`); }
           catch (statusError) { print(`Git状態の取得失敗: ${statusError.message}`); }
           ok = false;
@@ -91,7 +91,8 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
     }
   }
   if (!existsSync(join(root, archivePath))) {
-    print('取得時点: 未取得。本人がログイン後、npm run sync で初回同期してください。');
+    print('取得時点: 未取得。');
+    if (syncMode === 'none' && ok) print('初回取得には npm run sync を実行してください。');
   } else {
     try {
       print(JSON.stringify(archiveStatus(root, projectUrl, loadArchive(root, projectUrl), error => {
