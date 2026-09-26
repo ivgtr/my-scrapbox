@@ -73,6 +73,9 @@ const commands = {
 function validateArguments(command, args) {
   if (command.arguments === 'none' && args.length) throw new Error('このコマンドに引数は不要です。');
   if (command.arguments === 'title' && (args.length !== 1 || !args[0].trim())) {
+    if (command === commands['workspace:init'] && args.length === 0) {
+      throw new Error('workspace:init にはプロジェクトURLの引数が必要です。\n利用者向けの次の操作: 対話でセットアップする場合は Codexで $workspace-setup、Claudeで /workspace-setup を明示呼び出しし、URLの質問に回答してください。');
+    }
     throw new Error('検索語・タイトル・プロジェクトURLを1つ指定してください。空白を含む場合は引用符で囲んでください。');
   }
   if (command.arguments === 'sync' && (args.length > 1 || args.some(arg => arg !== '--rebuild'))) {

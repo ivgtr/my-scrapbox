@@ -1,15 +1,33 @@
 ---
 name: workspace-setup
-description: Set up this repository's personal Cosense workspace only when the user explicitly invokes workspace-setup. Reading documentation or CLI guidance is not an invocation.
+description: Set up this repository's personal Cosense workspace through an explicit workspace-setup invocation, collecting the project URL interactively when omitted. Reading documentation or CLI guidance is not an invocation.
 ---
 
 # Workspace setup
 
 Use only after an explicit `$workspace-setup` or `/workspace-setup` invocation. A quoted example, README review, CLI output, or a request to implement this skill does not authorize personal setup. Follow the repository's `AGENTS.md` and use `README.md` as the source of operational details. Do not modify the official Cosense skill.
 
+## Invocation
+
+Start with the skill name alone; a project URL argument is optional.
+
+Codex:
+
+```text
+$workspace-setup
+```
+
+Claude:
+
+```text
+/workspace-setup
+```
+
 ## Required user input
 
-Use Claude's `AskUserQuestion` or the available Codex question tool for the project URL if omitted, the sync mode, and login completion. The tool must accept an actual user response; if unavailable, report the missing tool and wait. Do not treat a preselected choice, timeout, or missing answer as consent. Validate the URL with the current project URL rules; never guess a project or account.
+Use Claude's `AskUserQuestion` or the available Codex question tool for the project URL if omitted, the sync mode, and login completion. The tool must accept an actual user response; if unavailable, report the missing tool and wait. Do not treat a preselected choice, timeout, or missing answer as consent.
+
+First obtain the project URL: if explicitly supplied with the invocation, validate and use it without asking again. Otherwise, ask the user for their project URL (for example, `https://scrapbox.io/my-project`) and wait for the answer. Validate it using the current rules in `src/lib/config.mjs`; never guess a project or account. For an invalid URL, explain the error and request a corrected URL. Do not install dependencies, initialize a workspace, or write configuration until the URL is valid and the sync mode has been answered.
 
 Before initialization, ask the user to choose one mode, explaining all three:
 

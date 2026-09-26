@@ -5,7 +5,7 @@ import { validateProjectUrl } from './config.mjs';
 
 export function initWorkspace(root, projectUrl) {
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  if (!projectUrl) throw new Error('プロジェクトURLが未指定です。\n利用者向けの次の操作: 初期化を依頼する場合は workspace-setup に https://scrapbox.io/プロジェクト名 を指定してください。');
+  if (!projectUrl) throw new Error('プロジェクトURLが未指定です。\n利用者向けの次の操作: 対話でセットアップする場合は Codexで $workspace-setup、Claudeで /workspace-setup を明示呼び出しし、URLの質問に回答してください。workspace:init 自体にはプロジェクトURLの引数が必要です。');
   projectUrl = validateProjectUrl(projectUrl);
   if (git(['branch', '--show-current']) !== 'main') throw new Error('現在のブランチは main ではないため初期化できません。\n利用者向けの次の操作: 初回セットアップの条件をREADMEで確認してください。既存workspaceを再初期化する必要はありません。');
   if (git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('作業ツリーに変更があります。初期化には変更のない main が必要です。\n利用者向けの次の操作: Git状態を確認してください。');

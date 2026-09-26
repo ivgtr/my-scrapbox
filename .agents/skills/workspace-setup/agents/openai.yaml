@@ -1,2 +1,5 @@
+interface:
+  default_prompt: "$workspace-setup"
+
 policy:
   allow_implicit_invocation: false

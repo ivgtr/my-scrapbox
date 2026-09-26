@@ -193,6 +193,7 @@ test('offline CLI works with no credentials and no network; memory and personal 
 
 test('workspace init rejects dirty trees, existing ignored files, invalid URLs and existing branches', t => {
   const root = fixture(t, false);
+  assert.throws(() => initWorkspace(root), /プロジェクトURLが未指定/);
   assert.throws(() => initWorkspace(root, 'https://example.com/example'), /projectUrl/);
   writeFileSync(join(root, 'dirty.txt'), 'dirty');
   assert.throws(() => initWorkspace(root, projectUrl), /変更のない/); rmSync(join(root, 'dirty.txt'));
@@ -293,15 +294,20 @@ test('CLI rejects unknown commands and bad arguments before loading settings or 
   const root = fixture(t, false);
   for (const [command, args, message] of [
     ['unknown', [], /不明/], ['search', [], /1つ指定/],
+    ['workspace:init', [], /プロジェクトURLの引数が必要/],
     ['sync', ['--unknown'], /オプション/], ['memory', ['extra'], /引数は不要/],
     ['constructor', [], /不明/]
   ]) {
     const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), command, ...args], { encoding: 'utf8' });
     assert.equal(result.status, 1);
     assert.match(result.stderr, message);
+    if (command === 'workspace:init') {
+      assert.match(result.stderr, /\$workspace-setup/);
+      assert.match(result.stderr, /\/workspace-setup/);
+    }
   }
-  assert.equal(existsSync(join(root, '.local')), false);
-  assert.equal(existsSync(join(root, 'archive')), false);
+  for (const name of ['.local', 'archive', 'cosense.config.json', 'memory']) assert.equal(existsSync(join(root, name)), false);
+  assert.equal(git(root, 'branch', '--list', 'workspace'), '');
 });
 
 test('list 404 stops once, page 404 retries, and malformed page metadata does not retry', async t => {

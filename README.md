@@ -4,18 +4,18 @@ Scrapbox（Cosense）の記事をローカルへ同期し、オフラインで�
 
 ## はじめる
 
-Node.js 24以上と質問ツールを使えるエージェントが必要です。fork・clone後、変更のない `main` で、URLを自分のプロジェクトに置き換えてSkillを明示呼び出しします。
+Node.js 24以上と質問ツールを使えるエージェントが必要です。fork・clone後、変更のない `main` でSkillを明示呼び出しします。プロジェクトURLは呼び出し後の質問に回答します。
 
 Codex:
 
 ```text
-$workspace-setup https://scrapbox.io/YOUR_PROJECT
+$workspace-setup
 ```
 
 Claude:
 
 ```text
-/workspace-setup https://scrapbox.io/YOUR_PROJECT
+/workspace-setup
 ```
 
 [セットアップSkill](.agents/skills/workspace-setup/SKILL.md)が同期モードの選択、依存関係・`workspace`・設定・記憶の準備を行います。本人が別ターミナルでログインし、完了を回答すると初回同期・確認へ進みます。既存データは上書きせず、READMEの参照だけでは開始しません。
