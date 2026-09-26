@@ -128,7 +128,7 @@ npm run workspace:update
 
 ## 開発・保守
 
-コマンド入口は `src/cli/`、機能本体は `src/lib/`、公式CLI連携は `src/integrations/cosense/` です。`npm test` は実アカウントを使わない検証です。[挙動評価](evaluation/README.md)は本人評価と区別します。Agentの規約は [AGENTS.md](AGENTS.md) を参照してください。
+コマンド入口は `src/cli/`、機能本体は `src/lib/`、公式CLI連携は `src/integrations/cosense/` です。`npm test` で実アカウントを使わずCLIの正確性を検証します。回答の有用性や提案後の効果は、本人の評価と実際の結果で確認します。Agentの規約は [AGENTS.md](AGENTS.md) を参照してください。
 
 CLIは `@helpfeel/cosense-cli` 1.15.0、公式Skillは上流commit `c94c481d29ae7cc51db64bd42fadcd7292f6b7cd` に固定しています。インストール時のパッチで認証保存先を `.local/cosense/settings.json` に限定し、ホームの認証設定や親シェルのPATは使いません。更新時はパッチの互換性を確認してください。
 
