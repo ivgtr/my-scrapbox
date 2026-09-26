@@ -61,8 +61,11 @@ const commands = {
     }
   },
   search: {
-    arguments: 'title', project: true, archive: true, index: true,
-    run: async ([query], { projectUrl, db }) => printJson(search(db, query).map(p => ({ ...p, url: pageUrl(projectUrl, p.title) })))
+    arguments: 'search', project: true, archive: true, index: true,
+    run: async ({ query, limit, offset }, { projectUrl, db }) => {
+      const result = search(db, query, { limit, offset });
+      printJson({ ...result, items: result.items.map(p => ({ ...p, url: pageUrl(projectUrl, p.title) })) });
+    }
   },
   links: {
     arguments: 'title', project: true, archive: true, index: true,
@@ -71,6 +74,28 @@ const commands = {
 };
 
 function validateArguments(command, args) {
+  if (command.arguments === 'search') {
+    if (!args.length || !args[0].trim() || args[0].startsWith('--')) {
+      throw new Error('検索語を1つ指定してください。空白を含む場合は引用符で囲んでください。');
+    }
+    const result = { query: args[0], limit: 20, offset: 0 };
+    const seen = new Set();
+    for (let i = 1; i < args.length; i += 2) {
+      const option = args[i];
+      if (!['--limit', '--offset'].includes(option) || seen.has(option)) {
+        throw new Error('search のオプションは --limit と --offset のみで、それぞれ1回指定できます。');
+      }
+      seen.add(option);
+      const value = args[i + 1];
+      const number = Number(value);
+      if (!value || !/^\d+$/u.test(value) || !Number.isSafeInteger(number) ||
+          (option === '--limit' && (number < 1 || number > 100))) {
+        throw new Error(`${option} は ${option === '--limit' ? '1〜100' : '非負の安全な整数'} の値を指定してください。`);
+      }
+      result[option.slice(2)] = number;
+    }
+    return result;
+  }
   if (command.arguments === 'none' && args.length) throw new Error('このコマンドに引数は不要です。');
   if (command.arguments === 'title' && (args.length !== 1 || !args[0].trim())) {
     if (command === commands['workspace:init'] && args.length === 0) {
@@ -81,6 +106,7 @@ function validateArguments(command, args) {
   if (command.arguments === 'sync' && (args.length > 1 || args.some(arg => arg !== '--rebuild'))) {
     throw new Error('sync のオプションは --rebuild のみです。');
   }
+  return args;
 }
 
 const [name, ...args] = process.argv.slice(2);
@@ -88,10 +114,10 @@ let db;
 try {
   const command = Object.hasOwn(commands, name) ? commands[name] : null;
   if (!command) throw new Error('不明なローカルコマンドです。');
-  validateArguments(command, args);
+  const validatedArgs = validateArguments(command, args);
   const context = command.project ? readConfig(rootUrl) : {};
   if (command.archive) context.archive = loadArchive(root, context.projectUrl);
   if (command.index) context.db = db = openIndex(root, context.archive);
-  await command.run(args, context);
+  await command.run(validatedArgs, context);
 } catch (error) { console.error(error.message); process.exitCode = 1; }
 finally { db?.close(); }

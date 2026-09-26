@@ -131,11 +131,11 @@ test('archive corruption and hash mismatch require rebuild; index recovery and l
   let archive = loadArchive(root, projectUrl);
   let db = openIndex(root, archive);
   for (const query of ['日本語', '全文検索', '日', '日本', '日本語 ABC', '100%', 'a_b', '"quoted"', '"', '%', '_']) {
-    assert.deepEqual(search(db, query).map(p => p.id), ['a'], query);
+    assert.deepEqual(search(db, query).items.map(p => p.id), ['a'], query);
   }
-  assert.deepEqual(search(db, '日本語 absent'), []);
-  assert.deepEqual(search(db, 'OR'), []);
-  assert.deepEqual(search(db, "x' OR 1=1 --"), []);
+  assert.deepEqual(search(db, '日本語 absent').items, []);
+  assert.deepEqual(search(db, 'OR').items, []);
+  assert.deepEqual(search(db, "x' OR 1=1 --").items, []);
   assert.throws(() => search(db, ' '), /検索語/);
   assert.equal(links(db, '本文なし').exists, false);
   assert.equal(links(db, '本文なし').incoming.length, 2);
@@ -145,7 +145,7 @@ test('archive corruption and hash mismatch require rebuild; index recovery and l
   assert.equal(indexState(root, archive), 'ready');
   writeFileSync(join(root, '.local/search.sqlite'), 'corrupt');
   assert.equal(indexState(root, archive), 'corrupt');
-  db = openIndex(root, archive); assert.equal(search(db, '全文').length, 1); db.close();
+  db = openIndex(root, archive); assert.equal(search(db, '全文').items.length, 1); db.close();
   rmSync(join(root, '.local/search.sqlite'));
   db = openIndex(root, archive); db.close();
   pages[0].updated++; await syncArchive(root, projectUrl, { get: server(pages).get });
@@ -159,7 +159,7 @@ test('archive corruption and hash mismatch require rebuild; index recovery and l
   writeFileSync(archivePath(root), '{broken');
   await syncArchive(root, projectUrl, { rebuild: true, get: server(pages).get });
   archive = loadArchive(root, projectUrl); db = openIndex(root, archive);
-  assert.equal(search(db, '日本語').length, 1); db.close();
+  assert.equal(search(db, '日本語').items.length, 1); db.close();
 });
 
 test('offline CLI works with no credentials and no network; memory and personal files can be committed', async t => {
@@ -287,7 +287,7 @@ test('before/after mutation retries, invalid duplicate titles do not publish, an
   assert.equal(statSync(archivePath(root)).mtimeMs, mtime);
   await syncArchive(root, projectUrl, { get: server([]).get });
   const archive = loadArchive(root, projectUrl); assert.equal(archive.data.articles.length, 0);
-  const db = openIndex(root, archive); assert.deepEqual(search(db, '日本語'), []); db.close();
+  const db = openIndex(root, archive); assert.deepEqual(search(db, '日本語').items, []); db.close();
 });
 
 test('CLI rejects unknown commands and bad arguments before loading settings or writing indexes', t => {
@@ -383,6 +383,8 @@ test('session none is offline with no archive; fetch creates and incrementally r
   const forbidden = async () => { throw new Error('network forbidden'); };
   let result = await session(root, 'none', { get: forbidden });
   assert.equal(result.ok, true); assert.match(result.output, /未取得/);
+  for (const name of ['article-explore', 'knowledge-deepen', 'knowledge-review']) assert.ok(result.output.includes(`.agents/skills/${name}/SKILL.md`));
+  assert.doesNotMatch(result.output, /ローカルで参照できます/);
   assert.equal(existsSync(archivePath(root)), false);
   const pages = [page('a', 'Alpha')];
   let remote = server(pages);
@@ -434,6 +436,7 @@ test('session fetch failures retain articles and dates; corruption stops network
   const root = fixture(t);
   let result = await session(root, 'fetch', { get: async () => { throw new Error('HTTP 401'); } });
   assert.equal(result.ok, false); assert.match(result.output, /未取得/);
+  assert.doesNotMatch(result.output, /ローカルで参照できます/);
   await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
   const archive = loadArchive(root, projectUrl);
   const head = git(root, 'rev-parse', 'HEAD');
@@ -452,6 +455,7 @@ test('session fetch failures retain articles and dates; corruption stops network
     result = await session(root, mode, { get: async () => { called = true; } });
     assert.equal(result.ok, false); assert.equal(called, false);
     assert.match(result.output, /sync -- --rebuild/); assert.match(result.output, /停止/);
+    assert.doesNotMatch(result.output, /ローカルで参照できます/);
     assert.equal(git(root, 'rev-parse', 'HEAD'), head);
   }
 });
@@ -528,4 +532,89 @@ test('CLI rejects invalid modes before networking; manual sync ignores commit mo
   result = run('session:start'); assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.notEqual(git(root, 'rev-parse', 'HEAD'), head);
   assert.equal(git(root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), 'archive/articles.json');
+});
+
+test('search pages have stable ordering, complete totals and end markers; CLI returns URLs', async t => {
+  const root = fixture(t);
+  const pages = Array.from({ length: 27 }, (_, i) => page(`id-${i}`, `記録${String(26 - i).padStart(2, '0')}`, '集中 日本語'));
+  await syncArchive(root, projectUrl, { get: server(pages).get });
+  const db = openIndex(root, loadArchive(root, projectUrl));
+  t.after(() => db.close());
+  const first = search(db, '集中');
+  assert.equal(first.items.length, 20); assert.equal(first.limit, 20);
+  assert.equal(first.offset, 0); assert.equal(first.total, 27); assert.equal(first.nextOffset, 20);
+  const ids = [];
+  for (let offset = 0; offset !== null;) {
+    const result = search(db, '集中 日本語', { limit: 7, offset });
+    assert.equal(result.total, 27); assert.equal(result.limit, 7); assert.equal(result.offset, offset);
+    ids.push(...result.items.map(p => p.id)); offset = result.nextOffset;
+  }
+  assert.deepEqual(ids, [...pages].sort((a, b) => a.title.localeCompare(b.title)).map(p => p.id));
+  assert.equal(new Set(ids).size, 27);
+  assert.deepEqual(search(db, 'absent'), { items: [], total: 0, limit: 20, offset: 0, nextOffset: null });
+  assert.deepEqual(search(db, '集中', { limit: 100, offset: 9007199254740991 }),
+    { items: [], total: 27, limit: 100, offset: 9007199254740991, nextOffset: null });
+  const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), 'search', '集中', '--offset', '26', '--limit', '1'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output, { items: [{ ...search(db, '集中', { limit: 1, offset: 26 }).items[0],
+    url: `${projectUrl}/${encodeURIComponent('記録26')}` }], total: 27, limit: 1, offset: 26, nextOffset: null });
+});
+
+test('search snippets center the earliest literal match without splitting Unicode code points', async t => {
+  const root = fixture(t);
+  const cases = [
+    ['short', 'short', '短い日本語本文', '日本語', '短い日本語本文'],
+    ['middle', 'middle', `${'😀'.repeat(200)}needle${'🧠'.repeat(200)}`, 'needle', null],
+    ['begin', 'begin', `needle${'あ'.repeat(200)}`, 'needle', null],
+    ['end', 'end', `${'あ'.repeat(200)}needle`, 'needle', null],
+    ['title', `${'😀'.repeat(200)}needle${'あ'.repeat(200)}`, '本文に一致なし', 'needle', null],
+    ['expanded', 'expanded', `${'İ'.repeat(200)}NEEDLE${'🧠'.repeat(200)}`, 'needle', null],
+    ['and', 'and', `${'あ'.repeat(200)}second${'あ'.repeat(200)}first`, 'first second', null]
+  ];
+  const pages = cases.map(([id, title, body]) => page(id, title, body, 1, { lines: [{ id: `body-${id}`, text: body }] }));
+  await syncArchive(root, projectUrl, { get: server(pages).get });
+  const db = openIndex(root, loadArchive(root, projectUrl));
+  t.after(() => db.close());
+  for (const [id, , , query, expected] of cases) {
+    const item = search(db, query).items.find(p => p.id === id);
+    assert.ok(item, id);
+    const snippet = item.snippet;
+    assert.ok([...snippet].length <= 160, id);
+    assert.equal(snippet.isWellFormed(), true, id);
+    if (expected) assert.equal(snippet, expected);
+    else assert.match(snippet.toLowerCase(), query === 'first second' ? /second/ : /needle/);
+    if (['middle', 'title', 'expanded', 'and'].includes(id)) {
+      assert.ok(snippet.startsWith('…')); assert.ok(snippet.endsWith('…'));
+    }
+    if (id === 'begin') { assert.ok(!snippet.startsWith('…')); assert.ok(snippet.endsWith('…')); }
+    if (id === 'end') { assert.ok(snippet.startsWith('…')); assert.ok(!snippet.endsWith('…')); }
+  }
+});
+
+test('invalid search arguments reject before config reads or index changes', async t => {
+  const root = fixture(t);
+  await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
+  openIndex(root, loadArchive(root, projectUrl)).close();
+  // An invalid config makes validation ordering observable.
+  writeFileSync(join(root, 'cosense.config.json'), '{broken');
+  const paths = ['cosense.config.json', 'archive/articles.json', '.local/search.sqlite', '.local/sync.json'];
+  const before = paths.map(path => ({ text: readFileSync(join(root, path)), mtime: statSync(join(root, path)).mtimeMs }));
+  const invalid = [[], [' '], ['word', 'extra'], ['word', '--unknown'], ['word', '--limit'],
+    ['word', '--offset'], ['word', '--limit', '0'], ['word', '--limit', '101'], ['word', '--limit', '-1'],
+    ['word', '--limit', '1.5'], ['word', '--limit', 'NaN'], ['word', '--limit', '1e1'],
+    ['word', '--offset', '-1'], ['word', '--offset', '9007199254740992'], ['word', '--offset', 'Infinity'],
+    ['word', '--offset', '0x10'], ['word', '--offset', ''], ['word', '--offset', '1.1'],
+    ['word', '--limit', '1', '--limit', '2'], ['word', '--offset', '0', '--offset', '1'],
+    ['word', '--limit', '--offset', '0'], ['word', '--limit=1'], ['--limit', '1'], ['--unknown']];
+  for (const args of invalid) {
+    const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), 'search', ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 1, args.join(' '));
+    assert.match(result.stderr, /検索語|search のオプション|--limit|--offset/);
+    assert.doesNotMatch(result.stderr, /設定|JSON/);
+  }
+  for (let i = 0; i < paths.length; i++) {
+    assert.deepEqual(readFileSync(join(root, paths[i])), before[i].text);
+    assert.equal(statSync(join(root, paths[i])).mtimeMs, before[i].mtime);
+  }
 });

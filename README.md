@@ -1,6 +1,6 @@
 # Cosense Local Knowledge Template
 
-Scrapbox（Cosense）の記事をローカルへ同期し、オフラインで検索・参照するテンプレートです。記事の正本はScrapbox、Agent記憶の正本はローカルのMarkdownです。
+Scrapbox（Cosense）に蓄積した記事から、関連する記録を発見し、考えを深め、計画や判断を見直すためのテンプレートです。自然な依頼に応じてAgentが記事を探索し、原文を根拠に理解・評価を進めます。記事の正本はScrapbox、Agent記憶の正本はローカルのMarkdownです。
 
 ## はじめる
 
@@ -24,23 +24,37 @@ PATは本人のターミナルで入力し、チャットやコマンド引数�
 
 ## 普段の使い方
 
-Agentはセッションの最初に `npm run session:start` を実行し、記憶・同期結果・取得時点を確認します。
+操作名を覚えず、目的を伝えてください。依頼に合うSkillだけを使います。
+
+| 依頼例 | 使うSkill |
+| --- | --- |
+| 「集中について書いた記事と関連記録を探して」 | [article-explore](.agents/skills/article-explore/SKILL.md)：記事と文脈を集めます。 |
+| 「この記録から、自分が大切にしていることを考えたい」「このテーマの矛盾を掘り下げたい」 | [knowledge-deepen](.agents/skills/knowledge-deepen/SKILL.md)：意味・関係・説明の候補を検討します。 |
+| 「これまでの学びと今の目的に照らして、この計画を見直して」 | [knowledge-review](.agents/skills/knowledge-review/SKILL.md)：目的や基準に照らして判断を評価します。 |
+
+提示された文章で足りる場合は、そのまま深掘り・レビューできます。過去の記事が必要な場合だけ探索し、根拠の記述とAgentの仮説を分けて扱います。
+
+Agentはセッションの最初に `npm run session:start` で記憶・同期結果・取得時点・Skillの入口を確認します。同期モードの既定値は `none` です。自然な依頼を受けても常に最新の記事を自動取得するわけではありません。
 
 「同期して」「同期を再開して」と依頼すると、[同期Skill](.agents/skills/workspace-sync/SKILL.md)が状態に応じて取得・再開・復旧します。Codexの `$workspace-sync`、Claudeの `/workspace-sync` でも呼び出せます。「同期状態を確認して」だけならオフラインで表示します。
 
-以下の操作はオフラインで使えます。未同期の変更は表示されません。
+記事の作成・編集には公式 [Cosense Skill & CLI](https://github.com/helpfeel/cosense-cli) を使い、反映後に同期します。入口は `npm run cosense -- ...`、対象プロジェクトは `@project` です。ローカルの記事は直接編集しません。別プロジェクトや画像本体は自動取得しません。
+
+Agentは決定・理由・未完了事項・次の操作を、確認日と根拠を添えて記憶へ保存します。読み取りだけ・記憶更新禁止の指示を優先し、秘密情報は保存しません。
+
+## ローカルの操作
+
+以下の操作はネットワークを使いません。未取得の記事や未同期の変更は表示されず、取得時点からScrapboxとの差分を推測することはできません。操作の詳細は探索Skillの [ツール資料](.agents/skills/article-explore/references/local-tools.md) にあります。
 
 | コマンド | 用途 |
 | --- | --- |
-| `npm run search -- "検索語"` | タイトル・本文を部分一致で検索します。空白区切りはAND検索です。 |
+| `npm run search -- "検索語" [--limit N] [--offset N]` | タイトル・本文の部分一致、空白区切りAND検索です。 |
 | `npm run read -- "タイトル"` | 原文・URL・取得時点を表示します。 |
 | `npm run links -- "タイトル"` | リンク先・被リンク元を表示します。本文のないタイトルも対象です。 |
 | `npm run memory` | 記憶の入口を表示します。 |
 | `npm run status` | 件数・取得日時・差分確認日時・索引状態を表示します。 |
 
-記事の作成・編集には公式 [Cosense Skill & CLI](https://github.com/helpfeel/cosense-cli) を使い、反映後に同期します。入口は `npm run cosense -- ...`、対象プロジェクトは `@project` です。ローカルの記事は直接編集しません。別プロジェクトや画像本体は自動取得しません。
-
-Agentは決定・理由・未完了事項・次の操作を、確認日と根拠を添えて記憶へ保存します。読み取りだけ・記憶更新禁止の指示を優先し、秘密情報は保存しません。
+検索は配列ではなく `{ items, total, limit, offset, nextOffset }` のJSONを返します。`items` の各候補は `id`・`title`・`url`・`snippet` を持ちます。`limit` は既定20（1〜100）、`offset` は既定0（非負の安全な整数）です。末尾の `nextOffset` は `null` です。抜粋は最大160 Unicodeコードポイントで候補選びに使い、解釈には `read` で本文を確認します。ページ取得の途中で同期すると結果が変わり得ます。保存形式・設定・認証の移行は不要です。
 
 ## 同期の設定
 

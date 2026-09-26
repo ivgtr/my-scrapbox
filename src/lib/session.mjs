@@ -54,6 +54,10 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
   }
   let ok = true;
   print(`セッション開始: syncMode=${syncMode}`);
+  print('依頼に応じたSkill（記事の利用可否・取得時点は以下の状態出力で確認）:\n' +
+    '- .agents/skills/article-explore/SKILL.md: 記事・関連記録を探索\n' +
+    '- .agents/skills/knowledge-deepen/SKILL.md: 意味・関係・矛盾を深掘り\n' +
+    '- .agents/skills/knowledge-review/SKILL.md: 目的や基準に照らして計画・判断を評価');
   try { print(readFileSync(join(root, 'memory/index.md'), 'utf8')); }
   catch (error) {
     if (error.code === 'ENOENT') print('ローカル記憶は未作成です。記憶なしで進めます。');
