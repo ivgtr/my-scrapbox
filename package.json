@@ -1,0 +1,18 @@
+{
+  "name": "my-scrapbox",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "postinstall": "node scripts/patch-cosense.mjs",
+    "cosense": "node scripts/cosense.mjs",
+    "auth:login": "node scripts/cosense.mjs login https://scrapbox.io",
+    "auth:check": "node scripts/cosense.mjs whoami https://scrapbox.io",
+    "pages": "node scripts/cosense.mjs listPages @project",
+    "memory": "node scripts/cosense.mjs browsePage @memory",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@helpfeel/cosense-cli": "1.15.0"
+  }
+}

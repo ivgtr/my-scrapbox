@@ -1,0 +1,6 @@
+node_modules/
+.local/
+cosense.config.json
+.env
+.env.*
+!.env.example
