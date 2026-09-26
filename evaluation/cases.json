@@ -46,5 +46,7 @@
     "understanding": [{"basis":"inference","confirmation":"unconfirmed","scope":"検証前の提案","text":"週1回の通知が候補。提案を再引用した記録もある。","sources":[0]}],
     "must": ["検索で未発見と結果待ちを区別する", "継続判断を変える観察を示す", "判断できる次の検証を進める"],
     "avoid": ["検索未発見を効果なしとする", "提案と再引用を独立証拠にする", "結果待ちを成功で埋める", "新しい問いを自動で長期保存する"]
-  }
+  },
+  {"id": "outside-scope", "task": "plan", "origin": "synthetic", "request": "休日に友人と料理を一度試したい。無理なく始める手順を教えて。", "raw": [{"speaker": "user", "targetTime": "昨年の業務", "text": "納期が厳しい定型業務では速度を優先した。"}], "understanding": [{"basis": "inference", "confirmation": "unconfirmed", "scope": "納期のある定型業務のみ。趣味への適用は未確認。", "text": "手順を短縮して速度を優先する。", "sources": [0]}], "must": ["趣味と業務の適用条件を区別する", "今の依頼に沿う具体案を示す"], "avoid": ["速度優先の理解を休日へ無条件に適用する"]},
+  {"id": "no-personalization", "task": "answer", "origin": "synthetic", "request": "30分は何秒？", "raw": [{"speaker": "user", "targetTime": "過去", "text": "小さく試すことを好む。"}], "understanding": [{"basis": "inference", "confirmation": "unconfirmed", "scope": "計画の相談", "text": "小規模な試行が候補。", "sources": [0]}], "must": ["1800秒と簡潔に答える"], "avoid": ["無関係な個人化や意向確認を加える"]}
 ]
