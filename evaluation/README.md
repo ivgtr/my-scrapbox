@@ -29,7 +29,7 @@ node evaluation/prepare.mjs evaluation/cases.json /tmp/evaluation-bundle 2026-09
 | tools | 利用可能なツールと権限。ツール禁止を前提にしない。実際の利用はイベントで別確認する |
 | referenceScope | 指定した参照範囲と強制の有無。今回の固定比較は指示による委任であり、共有ファイルへのアクセス不能は未確認 |
 | modelSettings | 実効モデルと設定。同一比較内で一致すること |
-| rawOutput | 未加工の最終出力を取得できる経路。返却時の要約・切り詰めがないこと |
+| rawOutput | ランタイム最終出力または指定先の回答原本を直接取得。返却報告・要約から復元しないこと |
 
 指示、別ディレクトリ、アクセスログだけでは隔離を保証できません。今回の固定比較に隔離保証は要求せず、参照範囲の指示と保証を区別します。根拠がない項目はverifiedにしません。補助コードは根拠ファイルの保存と契約検査を行いますが、任意の文書の正しさや隔離を証明するものではありません。原本保存、モデル実行の完了、比較条件の成立は別に判断します。別モデル・別CLIへ自動切り替えしません。
 
@@ -40,7 +40,7 @@ node evaluation/prepare.mjs evaluation/cases.json /tmp/evaluation-bundle 2026-09
 - 確認済み: `{ status: 'verified', value: '確認した値', evidencePath: '仕様・設定・イベントのファイル', reason: null }`
 - 未確認: `{ status: 'unconfirmed', value: null, evidencePath: null, reason: '確認できない理由' }`
 
-実経路（cycle）は引き続き全項目verifiedを要求します。今回の整理で記憶循環の成立条件は変更しません。
+実経路（cycle）は引き続き全項目verifiedとdelivery=inlineを要求します。今回の整理で記憶循環の成立条件は変更しません。
 
 ```js
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -115,15 +115,65 @@ eventRefは取得できたCLI入出力への参照です。取得できないな
 
 Claudeは特別な評価用Skillを使わず、自然な依頼からCLAUDE.md → AGENTS.md → 必要な通常Skill・CLIへ到達する経路を確認します。CodexとClaudeはbundle・試行記録・成立根拠・結果を分け、比較結果を混ぜません。
 
-## 実施状態（2026-09-26）
+## 実施状態（2026-09-27）
 
 - 前回生成した入力の対象HEADは`f481e60c48ba36bd152e59fcb5da7a9a5f8a04ac`。合成8例・24条件。適用外の理解を採用しない例、不要な個人化を避ける例を追加しました。個人データは収録していません。
 - `npm test`: 93件成功、失敗・skipなし。`git diff --check`も成功。モデルなしのテストで入力全文・条件分離、送信不一致、回答の改行・引用符・日本語、原本のbytes、要約拒否、ID・契約違反、原本・成果物欠落、中断、別IDによる再試行、既存成果物の保持、fixtureのCLIと記憶転送・順序・イベント照合を検証しています。MOCK起動情報とCLIのテストはモデルの挙動評価へ数えません。
 - 合成入力を`.local/evaluation/explicit-io-20260926/`へ生成済みです。入力・規約・対象HEADのsnapshotと親専用rubricを保持しています。モデルへの送信は行っていません。
 - 前回のCodex固定比較は未実施です。当時のサブAgent経路で成立根拠を確認できず停止したもので、環境の不可能性を証明したものではありません。
-- 今回はツール禁止を撤回し、記録層と実施側の成立判断を分離しました。評価テスト9件成功（既存6件と追加3件）、git diff --check成功。モデルなしの検証です。OS隔離とCLI接続は調査までで停止しました。利用者の指示により通常のサブAgentへ入力ファイルの参照を委任する経路を採用します。モデル送信はまだ行っていません。
-- Codexの別コンテキストをまたぐ記憶循環：未実施。先行する3条件の成立確認が未達です。
+- 今回はツール禁止を撤回し、記録層と実施側の成立判断を分離しました。評価テスト9件成功（既存6件と追加3件）、`git diff --check`成功。モデルなしの検証です。OS隔離とCLI接続は調査までで停止しました。利用者の指示により通常のサブAgentへ入力ファイルの参照を委任し、以下の一例3条件を実施しました。
+- Codexの別コンテキストをまたぐ記憶循環：未実施。今回の対象外であり、次のセッションに残します。
 - Claudeの固定比較・自然な依頼からの実経路：未実施。実行環境の成立根拠は未確認です。Claude/CodexのCLIはPATHにありますが、自動切り替えやモデル呼び出しは行っていません。
 - 本人による有用性評価、提案後の結果、実例の訂正後再利用：未収集。改善効果は未確認です。以前の個人例はこのテンプレートに収録せず、今回参照・変更していません。
 
 今回の範囲は実行環境の確認とanswer-attribution一例の3条件です。指定入力への参照を委任し、指定ファイルから回答原本を直接回収します。新規bundle・新規子を使い直列実行します。回答原本・対応する証跡・親の暫定判定を取得できれば今回の完了です。成立しなければ根拠・未達条件・次に必要な操作を記録します。記憶循環、全例比較、Claude比較は次のセッションに残します。
+
+### 今回の一例3条件
+
+入力の対象HEADは`7e96043dd42161bdf7a9a3cb0c83de61a1d78b51`です。開始時の`5005e91`から記録層を整理した後に固定しました。利用可能時点は`2026-09-26T14:56:00.182Z`、合成例は`answer-attribution`。旧`f481e60`の24条件は使用していません。実施後のcycle入力経路の範囲制限は固定比較の入力・原本へ影響しないため、完了回答は再生成していません。
+
+通常の`collaboration.spawn_agent`へ、一条件のinputPath・outputPathと共通の読み取り・保存依頼をJSONで送信しました。各条件はfork_turns=none、新しい子、モデル・推論設定の上書きなし。none → raw → raw-and-understandingの順に、前の子の完了と原本回収後に次を起動しました。返却報告は回答原本に使っていません。
+
+| 条件 / 試行ID末尾 | 子の識別子 | 取得・暫定判定 |
+| --- | --- | --- |
+| none / none-01 | /root/eval_none_01 | 原本・送信証跡・完了イベント・親判定を取得。保存と賛同を区別し、意向を断定しない。具体的な発言者の識別は原文がないため未確認 |
+| raw / raw-01 | /root/eval_raw_01 | 同じ成果物を取得。2024年の外部著者の主張と保存者のコメント不在を識別し、賛同を断定しない |
+| raw-and-understanding / raw-and-understanding-01 | /root/eval_understanding_01 | 同じ成果物を取得。外部著者を識別し、保存と賛同を区別。既存の理解も本人未確認と明示 |
+
+試行IDの接頭辞は`answer-attribution-`です。3試行とも原本契約・実行・回収はcompleted、失敗・再生成なし。判断は親による暫定的な規約適合評価です。理解ありの優位性、本人の有用性評価、提案後の結果は確認していません。
+
+原本の引用例：noneは「記事を保存したことだけでは、内容への賛同とは言えません。」、rawは「2024年の外部著者の「全ての判断を自動化すべきだ」という主張」、raw-and-understandingは「保存だけでは賛同の証拠にならないという既存の理解も、あなたによる確認はありません。」。must・avoidごとの引用と判定は各`judgment.json`に保持しています。情報を渡していないnoneの識別不足を、他条件に対する点数差として扱いません。
+
+### 成果物と確認の限界
+
+成果物はGit管理外の`.local/evaluation/delegated-one-20260926/`です。別環境での存在は前提にしません。
+
+- `bundle/`: 一例3条件のruns・snapshot・親専用rubric。
+- `trials/<trialId>/`: 入力全文、入力ハッシュ、実際に送ったパス指定全文と別ハッシュ、子ID、実行順、確認状況、原本bytes、answer、状態、親判定。
+- `trials/<trialId>/runtime/`: 子が保存した原本、取得したspawn_agent応答とlist_agents完了応答。`output-event.bin`は完了応答の保存です。公開ツール応答を親が保存したもので、内部イベントストリームやツール呼び出し全履歴ではありません。
+- `summary.json`: 3条件の取得状態、原本ハッシュ、未確認事項。指定原本と回収原本のbytes一致、入力と送信全文のハッシュ一致を確認しました。
+- `evidence/`: セッションのサブAgent仕様・実施方針、および中止したCLI・OS隔離の調査証跡。CLI経路でモデルは呼び出していません。
+
+会話はfork_turns=noneの仕様と実際の起動指定を確認しました。ツールは利用可能なままです。参照範囲は利用者の指示に従って子へ委任し、共有ファイルにアクセスできないという保証は要求・検証していません。自動投入情報の全体、実効モデル・設定、実際に読んだ全ファイル、内部ツール実行履歴は未取得です。モデル・設定は同じ親から継承する要求までを確認し、厳密な同一設定の証明とは区別します。`usedEvidenceIds`は子の自己申告です。これらを未確認のまま残した探索的な3条件比較であり、統制条件が全て成立した比較とは報告しません。
+
+### 再生成・再実行
+
+同じ例のbundleは現行コードで次のように生成できます。新規出力先を指定し、使ったHEADと時点を明示してください。モデル呼び出しは含みません。
+
+```sh
+node --input-type=module <<'JS'
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { writeBundle } from './evaluation/prepare.mjs';
+const cases = JSON.parse(readFileSync('evaluation/cases.json', 'utf8'));
+writeBundle(cases.filter(c => c.id === 'answer-attribution'),
+  '.local/evaluation/answer-attribution-new-bundle', {
+    availableAt: new Date().toISOString(),
+    targetHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  });
+JS
+```
+
+実行は各runを`startTrial`で新しい試行IDへ保存し、runtimeディレクトリを作成します。実際に送るJSONは`{ inputPath, outputPath, instructions }`です。指定入力だけを参照し、入力のoutput.formatに従う回答全文をoutputPathへ保存するよう依頼します。通常のサブAgentをfork_turns=none、モデル指定なしで1つずつ起動し、公開起動・完了応答を保存します。`bindLaunch(..., { delivery: 'file', sentInput, childId, runtime, order, checks })`、`captureFixed(..., { sourcePath: outputPath, sourceKind: 'designated-artifact', eventPath, executionStatus })`、`judgeTrial`の順で回収・判定します。原本がない場合は返却報告で補わず`failTrial`へ理由を残します。
+
+今回の3条件は完了済みなので再実行しません。未完了条件を再開する場合だけ、同じbundleのrun・新しい試行ID・新しい子を使います。失敗試行は保持します。参照指示やモデル・設定を変える場合は別bundleへ分けます。次のセッションは、必要なモデル・設定の確認方法を決めた上で記憶循環一例へ進みます。全例比較とClaude比較も今回未実施です。

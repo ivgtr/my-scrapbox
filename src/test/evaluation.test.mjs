@@ -98,6 +98,7 @@ test('fixed launch records unknown settings without claiming comparison validity
   assert.equal(Buffer.from(recorded.tools.bytes, 'base64').toString(), readFileSync(event, 'utf8'));
   const fixture = createFixture(source, join(root, 'cycle-fixture'), { ...options, stage: 'form' });
   const cycle = startTrial(root, { trialId: 'strict-cycle', method: 'cycle', input: cycleInput(fixture, 'strict-cycle'), fixture: fixture.fixture });
+  assert.throws(() => bindLaunch(cycle, { ...args, delivery: 'file', childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') }), /今回の対象外/);
   assert.throws(() => bindLaunch(cycle, { ...args, childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') }), /実経路.*未確認/);
 });
 test('capture retains original and events when launch or execution evidence is incomplete', t => {

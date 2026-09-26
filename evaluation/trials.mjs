@@ -62,6 +62,7 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order, d
   }
   text(sentInput);
   if (!['inline', 'file'].includes(delivery)) throw new Error('入力の渡し方が不正です。');
+  if (trial.method === 'cycle' && delivery !== 'inline') throw new Error('実経路のファイル委任は今回の対象外です。');
   const input = readFileSync(join(path, 'input.txt'), 'utf8');
   if (hash(input) !== trial.inputHash) throw new Error('固定入力が変更されています。');
   if (delivery === 'inline') {
