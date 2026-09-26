@@ -14,7 +14,7 @@ const temp = t => { const root = mkdtempSync(join(tmpdir(), 'evaluation-')); t.a
 function launch(root, path) {
   const event = join(root, 'runtime.txt');
   writeFileSync(event, 'MOCK runtime proof: synthetic test only');
-  const checks = Object.fromEntries(runtimeChecks.map(key => [key, { status: 'verified', value: `MOCK ${key}`, evidencePath: event }]));
+  const checks = Object.fromEntries(runtimeChecks.map(key => [key, { status: 'verified', value: `MOCK ${key}`, evidencePath: event, reason: null }]));
   const trialId = JSON.parse(readFileSync(join(path, 'trial.json'), 'utf8')).trialId;
   const order = readdirSync(root).filter(name => existsSync(join(root, name, 'launch.json'))).length + 1;
   const args = { childId: `mock-${trialId}`, order, runtime: 'mock-only', sentInput: readFileSync(join(path, 'input.txt'), 'utf8'), checks };
@@ -49,7 +49,7 @@ test('original JSON bytes and Japanese multiline answer survive; IDs and launch 
   const answer = '日本語\n"引用"\\そのまま 🧠\n';
   const original = JSON.stringify({ trialId: 'one', status: 'completed', answer, usedEvidenceIds: [], error: null }, null, 4) + '\n';
   const file = join(root, 'out.json'); writeFileSync(file, original);
-  assert.equal(captureFixed(path, { sourcePath: file, sourceKind: 'runtime-final', eventPath: event }).status, 'completed');
+  assert.equal(captureFixed(path, { sourcePath: file, sourceKind: 'runtime-final', eventPath: event, executionStatus: 'completed' }).status, 'completed');
   assert.equal(readFileSync(join(path, 'answer.txt'), 'utf8'), answer);
   assert.equal(readFileSync(join(path, 'final-output.json'), 'utf8'), original);
   assert.throws(() => failTrial(path, 'overwrite'), /終了済み/);
@@ -66,7 +66,7 @@ test('summary replacement, wrong ID, invalid schema, missing output, and incompl
   ]) {
     const path = trial(root, id), { event } = launch(root, path), file = join(root, `${id}.json`);
     if (value) writeFileSync(file, JSON.stringify(value));
-    assert.equal(captureFixed(path, { sourcePath: file, sourceKind: kind, eventPath: event }).status, 'invalid');
+    assert.equal(captureFixed(path, { sourcePath: file, sourceKind: kind, eventPath: event, executionStatus: 'completed' }).status, 'invalid');
     assert.equal(existsSync(join(path, 'answer.txt')), false);
   }
   const first = trial(root, 'interrupted'); failTrial(first, 'runtime stopped');
@@ -74,6 +74,53 @@ test('summary replacement, wrong ID, invalid schema, missing output, and incompl
   assert.equal(readFileSync(join(first, 'input.txt'), 'utf8').replaceAll('interrupted', 'retry'), readFileSync(join(retry, 'input.txt'), 'utf8'));
   const args = { childId: 'x', order: 99, runtime: 'x', sentInput: readFileSync(join(retry, 'input.txt'), 'utf8'), checks: {} };
   assert.throws(() => bindLaunch(retry, args), /契約/);
+});
+test('fixed launch records unknown settings without claiming comparison validity; cycle remains strict', t => {
+  const root = temp(t), path = trial(root, 'observed');
+  const event = join(root, 'events.txt'); writeFileSync(event, 'MOCK final event');
+  const checks = Object.fromEntries(runtimeChecks.map(key => [key, { status: 'verified', value: `MOCK ${key}`, evidencePath: event, reason: null }]));
+  checks.modelSettings = { status: 'unconfirmed', value: null, evidencePath: null, reason: '実効設定を取得できない' };
+  const args = { childId: 'mock-observed', runtime: 'mock-only', order: 1, sentInput: readFileSync(join(path, 'input.txt'), 'utf8'), checks };
+  assert.throws(() => bindLaunch(path, { ...args, sentInput: args.sentInput + ' ' }), /一致/);
+  for (const change of [{ status: 'unknown' }, { value: '推測値' }, { evidencePath: event }, { reason: '' }, { extra: true }]) {
+    assert.throws(() => bindLaunch(path, { ...args, checks: { ...checks, modelSettings: { ...checks.modelSettings, ...change } } }));
+  }
+  bindLaunch(path, args);
+  assert.throws(() => bindLaunch(path, args), /同時|再利用/);
+  const file = join(root, 'output.json');
+  writeFileSync(file, JSON.stringify({ trialId: 'observed', status: 'completed', answer: '回答原本', usedEvidenceIds: [], error: null }));
+  captureFixed(path, { sourcePath: file, sourceKind: 'runtime-final', eventPath: event, executionStatus: 'completed' });
+  const result = JSON.parse(readFileSync(join(path, 'result.json')));
+  assert.equal(result.status, 'completed'); assert.equal(result.comparison, 'parent-unassessed');
+  assert.deepEqual(result.unconfirmedChecks, ['modelSettings']);
+  const recorded = JSON.parse(readFileSync(join(path, 'launch.json'))).evidence;
+  assert.equal(recorded.modelSettings.bytes, null); assert.equal(recorded.tools.status, 'verified');
+  assert.equal(Buffer.from(recorded.tools.bytes, 'base64').toString(), readFileSync(event, 'utf8'));
+  const fixture = createFixture(source, join(root, 'cycle-fixture'), { ...options, stage: 'form' });
+  const cycle = startTrial(root, { trialId: 'strict-cycle', method: 'cycle', input: cycleInput(fixture, 'strict-cycle'), fixture: fixture.fixture });
+  assert.throws(() => bindLaunch(cycle, { ...args, childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') }), /実経路.*未確認/);
+});
+test('capture retains original and events when launch or execution evidence is incomplete', t => {
+  const root = temp(t), event = join(root, 'event.txt'); writeFileSync(event, 'MOCK raw event\n');
+  for (const executionStatus of ['completed', 'interrupted', 'unconfirmed']) {
+    const path = trial(root, executionStatus), file = join(root, `${executionStatus}.json`);
+    const original = JSON.stringify({ trialId: executionStatus, status: 'completed', answer: '取得済み回答\n', usedEvidenceIds: [], error: null }) + '\n';
+    writeFileSync(file, original);
+    if (executionStatus !== 'completed') launch(root, path);
+    assert.throws(() => captureFixed(path, { sourcePath: file, sourceKind: 'runtime-final', eventPath: event, executionStatus: 'unknown' }), /実行状態/);
+    captureFixed(path, { sourcePath: file, sourceKind: 'runtime-final', eventPath: event, executionStatus });
+    assert.equal(readFileSync(join(path, 'final-output.json'), 'utf8'), original);
+    assert.equal(readFileSync(join(path, 'answer.txt'), 'utf8'), '取得済み回答\n');
+    assert.equal(readFileSync(join(path, 'output-event.bin'), 'utf8'), 'MOCK raw event\n');
+    const result = JSON.parse(readFileSync(join(path, 'result.json')));
+    assert.equal(result.status, 'invalid'); assert.equal(result.outputStatus, 'completed');
+    assert.equal(result.executionStatus, executionStatus);
+    assert.equal(result.launchStatus, executionStatus === 'completed' ? 'missing' : 'bound');
+    assert.throws(() => judgeTrial(path, { trialId: executionStatus, findings: [], unconfirmed: [], eventVerification: [] }), /判定対象/);
+  }
+  const missing = trial(root, 'missing-raw');
+  captureFixed(missing, { sourcePath: join(root, 'absent'), sourceKind: 'runtime-final', eventPath: event, executionStatus: 'failed' });
+  assert.equal(readFileSync(join(missing, 'output-event.bin'), 'utf8'), 'MOCK raw event\n');
 });
 test('stage fixtures contain only synthetic articles and captured memory; artifacts and transcripts never propagate', t => {
   const root = temp(t);

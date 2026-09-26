@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { hash } from '../src/lib/archive.mjs';
-export const rules = '現在の依頼に日本語で答えてください。根拠・推測・現在の意向を区別し、必要な不足を示しながら判断できる部分は進めてください。外部調査、ツール、追加参照、記憶の保存、子Agentの起動は禁止です。入力にある情報だけを使ってください。';
+export const rules = '現在の依頼に日本語で答えてください。根拠・推測・現在の意向を区別し、必要な不足を示しながら判断できる部分は進めてください。ツールは利用できますが、依頼の根拠として参照する情報はこの条件の合成入力に限ります。他条件の入力・回答、親の判定、個人データ、外部情報は参照しないでください。記憶の保存と子Agentの起動は禁止です。';
 export function prepare(cases, { availableAt, targetHead }) {
   if (!Array.isArray(cases) || !cases.length || typeof availableAt !== 'string' || !Number.isFinite(Date.parse(availableAt)) || !/^[a-f0-9]{40}$/.test(targetHead ?? '')) throw new Error('評価例・利用可能時点・対象HEADを指定してください。');
   const conditions = ['none', 'raw', 'raw-and-understanding'];

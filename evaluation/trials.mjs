@@ -64,13 +64,21 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order })
   exact(checks, runtimeChecks);
   const evidence = {};
   for (const key of runtimeChecks) {
-    exact(checks[key], ['status', 'value', 'evidencePath']);
-    if (checks[key].status !== 'verified') throw new Error('成立条件が未確認です。');
+    exact(checks[key], ['status', 'value', 'evidencePath', 'reason']);
+    if (!['verified', 'unconfirmed'].includes(checks[key].status)) throw new Error('確認状態が不正です。');
+    if (checks[key].status === 'unconfirmed') {
+      if (checks[key].value !== null || checks[key].evidencePath !== null) throw new Error('未確認の値・根拠はnullです。');
+      text(checks[key].reason);
+      if (trial.method === 'cycle') throw new Error('実経路の成立条件が未確認です。');
+      evidence[key] = { status: 'unconfirmed', value: null, sha256: null, bytes: null, reason: checks[key].reason };
+      continue;
+    }
+    if (checks[key].reason !== null) throw new Error('確認済みのreasonはnullです。');
     text(checks[key].value); text(checks[key].evidencePath);
     // Runtime docs/events supplied by the parent, never a child's assertion.
     const bytes = readFileSync(checks[key].evidencePath);
     if (!bytes.length) throw new Error('成立根拠が空です。');
-    evidence[key] = { value: checks[key].value, sha256: hash(bytes), bytes: bytes.toString('base64') };
+    evidence[key] = { status: 'verified', value: checks[key].value, sha256: hash(bytes), bytes: bytes.toString('base64'), reason: null };
   }
   save(join(path, 'launch.json'), { trialId: trial.trialId, childId, runtime, order, launchedAt: new Date().toISOString(), sentInput, inputHash: hash(sentInput), evidence });
 }
@@ -95,18 +103,26 @@ let snapshotError = null;
   }
   save(join(path, 'result.json'), { trialId: trial.trialId, status: 'failed', reason, snapshotError });
 }
-export function captureFixed(path, { sourcePath, sourceKind, eventPath }) {
+export function captureFixed(path, { sourcePath, sourceKind, eventPath, executionStatus }) {
   const trial = pending(path);
   if (trial.method !== 'fixed') throw new Error('固定比較ではありません。');
-  let status = 'completed', reason = null, answer = null;
+  if (!['completed', 'failed', 'interrupted', 'unconfirmed'].includes(executionStatus)) throw new Error('実行状態が不正です。');
+  let answer = null, outputStatus = 'invalid';
+  const errors = [];
+  // Capture independently: missing launch/output must not discard acquired events or bytes.
+  let bytes = null;
   try {
-    json(join(path, 'launch.json'));
     if (sourceKind !== 'runtime-final') throw new Error('要約・自己申告を回答原本にはできません。');
-    const bytes = readFileSync(sourcePath);
+    bytes = readFileSync(sourcePath);
     writeFileSync(join(path, 'final-output.json'), bytes, { flag: 'wx', mode: 0o600 });
+  } catch (error) { errors.push(error.message); }
+  try {
     const event = readFileSync(eventPath);
     if (!event.length) throw new Error('原本取得イベントがありません。');
     writeFileSync(join(path, 'output-event.bin'), event, { flag: 'wx', mode: 0o600 });
+  } catch (error) { errors.push(error.message); }
+  try {
+    if (bytes === null) throw new Error('回答原本がありません。');
     const output = JSON.parse(bytes.toString('utf8'));
     exact(output, ['trialId', 'status', 'answer', 'usedEvidenceIds', 'error']);
     if (output.trialId !== trial.trialId) throw new Error('試行IDが一致しません。');
@@ -116,8 +132,17 @@ export function captureFixed(path, { sourcePath, sourceKind, eventPath }) {
     if (!Array.isArray(output.usedEvidenceIds) || output.usedEvidenceIds.some(id => !allowed.has(id)) || new Set(output.usedEvidenceIds).size !== output.usedEvidenceIds.length) throw new Error('使用根拠IDが不正です。');
     answer = output.answer;
     writeFileSync(join(path, 'answer.txt'), answer, { flag: 'wx', mode: 0o600 });
-  } catch (error) { status = 'invalid'; reason = error.message; }
-  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, answerHash: answer === null ? null : hash(answer) });
+    outputStatus = 'completed';
+  } catch (error) { errors.push(error.message); }
+  let launchStatus = 'missing', unconfirmedChecks = runtimeChecks;
+  try {
+    const launch = json(join(path, 'launch.json'));
+    launchStatus = 'bound';
+    unconfirmedChecks = runtimeChecks.filter(key => launch.evidence[key].status === 'unconfirmed');
+  } catch (error) { errors.push(`起動証跡不足: ${error.message}`); }
+  if (executionStatus !== 'completed') errors.push(`実行状態: ${executionStatus}`);
+  const status = errors.length ? 'invalid' : 'completed', reason = errors.length ? errors.join(' / ') : null;
+  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, outputStatus, executionStatus, launchStatus, unconfirmedChecks, comparison: 'parent-unassessed', answerHash: answer === null ? null : hash(answer) });
   return { status, reason };
 }
 export function captureCycle(path, { eventPath }) {
