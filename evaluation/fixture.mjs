@@ -7,7 +7,7 @@ const requests = [
   '通知試行の記事から、処理の成功と仕事の成果の関係を考えたい。再利用できる理解があれば、根拠付きの仮説として記憶に保存して。',
   '在庫確認の漏れを減らしたい。今は時間をかけず小さく試したい。過去の学びが使えるなら、今回への適用条件を確かめて第一候補まで示して。',
   '通知の試行について訂正します。必要な人は通知を読めていました。漏れの原因は、読んだ後に誰が対応するか決まっていなかったことです。前の理解と関連記憶を確認し、訂正して保存してください。',
-  '引継ぎの対応漏れを減らしたい。通知は全員読めていますが、対応担当は決まっていません。過去の理解を参照し、小さく試せる第一候補を示して。'
+  '以前の通知試行について、現在は何が分かっていますか。その経験を、別チームの引継ぎ漏れ対策へ応用するなら、最初に何を確かめますか。過去に確認されたことと、今回への推測を分けて提案してください。'
 ];
 export function createFixture(source, destination, { targetHead, stage, previousTrial = null }) {
   if (!/^[a-f0-9]{40}$/.test(targetHead ?? '') || !stages.includes(stage)) throw new Error('HEAD・段階が不正です。');
@@ -19,7 +19,7 @@ export function createFixture(source, destination, { targetHead, stage, previous
     const previous = JSON.parse(readFileSync(join(previousTrial, 'input.txt'), 'utf8'));
     const result = JSON.parse(readFileSync(join(previousTrial, 'result.json'), 'utf8'));
     const judgment = JSON.parse(readFileSync(join(previousTrial, 'judgment.json'), 'utf8'));
-    if (previous.stage !== stages[stages.indexOf(stage) - 1] || previous.targetHead !== targetHead || result.status !== 'completed' || !judgment.eventVerification.length || judgment.eventVerification.some(e => e.status !== 'verified')) throw new Error('前段階の完了・イベント照合を確認できません。');
+    if (previous.stage !== stages[stages.indexOf(stage) - 1] || previous.targetHead !== targetHead || result.status !== 'completed' || result.executionStatus !== 'completed' || judgment.trialId !== result.trialId || judgment.kind !== 'assessment' || judgment.assessment !== 'parent-provisional') throw new Error('前段階の完了・親の判定を確認できません。');
     const snapshot = JSON.parse(readFileSync(join(previousTrial, 'memory-after.json'), 'utf8'));
     if (snapshot.sha256 !== hash(JSON.stringify(snapshot.files))) throw new Error('記憶snapshotが不正です。');
     memory = snapshot.files;

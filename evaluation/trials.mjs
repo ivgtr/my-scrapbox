@@ -62,16 +62,23 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order, d
   }
   text(sentInput);
   if (!['inline', 'file'].includes(delivery)) throw new Error('入力の渡し方が不正です。');
-  if (trial.method === 'cycle' && delivery !== 'inline') throw new Error('実経路のファイル委任は今回の対象外です。');
   const input = readFileSync(join(path, 'input.txt'), 'utf8');
   if (hash(input) !== trial.inputHash) throw new Error('固定入力が変更されています。');
   if (delivery === 'inline') {
     if (sentInput !== input) throw new Error('送信入力が固定入力と一致しません。');
   } else {
     const envelope = JSON.parse(sentInput);
-    exact(envelope, ['inputPath', 'outputPath', 'instructions']);
-    text(envelope.inputPath); text(envelope.outputPath); text(envelope.instructions);
-    if (envelope.inputPath !== resolve(path, 'input.txt') || envelope.outputPath !== resolve(path, 'runtime', 'final-output.json')) throw new Error('入力・原本の指定パスが不正です。');
+    text(envelope.instructions);
+    if (trial.method === 'fixed') {
+      exact(envelope, ['inputPath', 'outputPath', 'instructions']);
+      if (envelope.outputPath !== resolve(path, 'runtime', 'final-output.json')) throw new Error('原本の指定パスが不正です。');
+    } else {
+      exact(envelope, ['inputPath', 'output', 'instructions']);
+      exact(envelope.output, ['answer', 'execution']);
+      const contract = JSON.parse(input);
+      if (envelope.output.answer !== resolve(trial.fixture, contract.output.answer) || envelope.output.execution !== resolve(trial.fixture, contract.output.execution)) throw new Error('実経路の成果物指定パスが不正です。');
+    }
+    if (envelope.inputPath !== resolve(path, 'input.txt')) throw new Error('入力の指定パスが不正です。');
   }
   exact(checks, runtimeChecks);
   const evidence = {};
@@ -81,7 +88,6 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order, d
     if (checks[key].status === 'unconfirmed') {
       if (checks[key].value !== null || checks[key].evidencePath !== null) throw new Error('未確認の値・根拠はnullです。');
       text(checks[key].reason);
-      if (trial.method === 'cycle') throw new Error('実経路の成立条件が未確認です。');
       evidence[key] = { status: 'unconfirmed', value: null, sha256: null, bytes: null, reason: checks[key].reason };
       continue;
     }
@@ -98,22 +104,27 @@ function pending(path) {
   if (existsSync(join(path, 'result.json'))) throw new Error('終了済み試行は変更できません。');
   return json(join(path, 'trial.json'));
 }
-export function failTrial(path, reason) {
-  const trial = pending(path); text(reason);
-let snapshotError = null;
-  if (trial.fixture) {
-  try {
+function collect(errors, label, action) {
+  try { action(); } catch (error) { errors.push(`${label}: ${error.message}`); }
+}
+function captureSnapshots(path, trial, errors) {
+  collect(errors, '記憶回収失敗', () => {
     const after = memorySnapshot(trial.fixture);
     save(join(path, 'memory-after.json'), after);
     const input = json(join(path, 'input.txt'));
     if (['reuse', 'reuse-corrected'].includes(input.stage) && after.sha256 !== json(join(path, 'memory-before.json')).sha256) throw new Error('参照段階で記憶が変更されています。');
+  });
+  collect(errors, '環境回収失敗', () => {
     const environment = { archive: readFileSync(join(trial.fixture, 'archive/articles.json'), 'utf8'), config: readFileSync(join(trial.fixture, 'cosense.config.json'), 'utf8') };
     save(join(path, 'environment-after.json'), environment);
     if (JSON.stringify(environment) !== JSON.stringify(json(join(path, 'environment-before.json')))) throw new Error('記事または設定が変更されています。');
-  }
-    catch (error) { snapshotError = error.message; }
-  }
-  save(join(path, 'result.json'), { trialId: trial.trialId, status: 'failed', reason, snapshotError });
+  });
+}
+export function failTrial(path, reason) {
+  const trial = pending(path); text(reason);
+  const errors = [];
+  if (trial.fixture) captureSnapshots(path, trial, errors);
+  save(join(path, 'result.json'), { trialId: trial.trialId, status: 'failed', reason, snapshotError: errors.length ? errors.join(' / ') : null });
 }
 export function captureFixed(path, { sourcePath, sourceKind, eventPath, executionStatus }) {
   const trial = pending(path);
@@ -158,47 +169,68 @@ export function captureFixed(path, { sourcePath, sourceKind, eventPath, executio
   save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, sourceKind, outputStatus, executionStatus, launchStatus, unconfirmedChecks, comparison: 'parent-unassessed', answerHash: answer === null ? null : hash(answer) });
   return { status, reason };
 }
-export function captureCycle(path, { eventPath }) {
+export function captureCycle(path, { eventPath, executionStatus }) {
   const trial = pending(path);
   if (trial.method !== 'cycle') throw new Error('実経路ではありません。');
-  let status = 'completed', reason = null;
-  try {
-    json(join(path, 'launch.json'));
-    const input = JSON.parse(readFileSync(join(path, 'input.txt'), 'utf8'));
-    if (lstatSync(join(trial.fixture, 'artifacts')).isSymbolicLink() || lstatSync(join(trial.fixture, input.output.answer)).isSymbolicLink()) throw new Error('成果物にsymlinkは不可です。');
-    const answer = readFileSync(join(trial.fixture, input.output.answer), 'utf8');
-    writeFileSync(join(path, 'answer.txt'), answer, { flag: 'wx', mode: 0o600 });
-    if (lstatSync(join(trial.fixture, input.output.execution)).isSymbolicLink()) throw new Error('成果物にsymlinkは不可です。');
-    const logBytes = readFileSync(join(trial.fixture, input.output.execution));
-    writeFileSync(join(path, 'execution.json'), logBytes, { flag: 'wx', mode: 0o600 });
-    text(answer);
-    const log = JSON.parse(logBytes.toString('utf8'));
+  if (!['completed', 'failed', 'interrupted', 'unconfirmed'].includes(executionStatus)) throw new Error('実行状態が不正です。');
+  const errors = [];
+  let launchStatus = 'missing', unconfirmedChecks = runtimeChecks, outputStatus = 'invalid', answerStatus = 'invalid', recordStatus = 'invalid';
+  collect(errors, '起動証跡不足', () => {
+    const launch = json(join(path, 'launch.json'));
+    unconfirmedChecks = runtimeChecks.filter(key => launch.evidence[key].status === 'unconfirmed');
+    launchStatus = 'bound';
+  });
+  // Each artifact has its own capture boundary; invalid bytes are retained for diagnosis.
+  function artifact(name, destination) {
+    const source = join(trial.fixture, 'artifacts', name);
+    if (lstatSync(join(trial.fixture, 'artifacts')).isSymbolicLink() || lstatSync(source).isSymbolicLink()) throw new Error('成果物にsymlinkは不可です。');
+    const bytes = readFileSync(source);
+    writeFileSync(join(path, destination), bytes, { flag: 'wx', mode: 0o600 });
+    return bytes;
+  }
+  collect(errors, '回答回収失敗', () => {
+    text(artifact('answer.txt', 'answer.txt').toString('utf8'));
+    answerStatus = 'completed';
+  });
+  collect(errors, '実行記録回収失敗', () => {
+    const log = JSON.parse(artifact('execution.json', 'execution.json').toString('utf8'));
+    const input = json(join(path, 'input.txt'));
     exact(log, ['trialId', 'stage', 'status', 'usedRecords', 'operations', 'error']);
     if (log.trialId !== trial.trialId || log.stage !== input.stage || log.status !== 'completed' || log.error !== null) throw new Error('実行記録が未完了または試行不一致です。');
     if (!Array.isArray(log.usedRecords) || log.usedRecords.some(r => { exact(r, ['id', 'revision']); return typeof r.id !== 'string' || !Number.isInteger(r.revision) || r.revision < 1; })) throw new Error('記録ID・revisionが不正です。');
     if (!Array.isArray(log.operations) || log.operations.some(op => { exact(op, ['command', 'eventRef']); return typeof op.command !== 'string' || !(op.eventRef === null || typeof op.eventRef === 'string'); })) throw new Error('操作記録が不正です。');
-    // Preserve artifact bytes, but operations remain self-reports until parent judgment matches runtime events.
+    recordStatus = 'completed';
+  });
+  collect(errors, 'イベント回収失敗', () => {
     const events = readFileSync(eventPath);
-    if (!events.length) throw new Error('ランタイムイベントが未取得です。');
     writeFileSync(join(path, 'runtime-events.bin'), events, { flag: 'wx', mode: 0o600 });
-  } catch (error) { status = 'invalid'; reason = error.message; }
-try {
-    const after = memorySnapshot(trial.fixture);
-    save(join(path, 'memory-after.json'), after);
-    const input = json(join(path, 'input.txt'));
-    if (['reuse', 'reuse-corrected'].includes(input.stage) && after.sha256 !== json(join(path, 'memory-before.json')).sha256) throw new Error('参照段階で記憶が変更されています。');
-    const environment = { archive: readFileSync(join(trial.fixture, 'archive/articles.json'), 'utf8'), config: readFileSync(join(trial.fixture, 'cosense.config.json'), 'utf8') };
-    save(join(path, 'environment-after.json'), environment);
-    if (JSON.stringify(environment) !== JSON.stringify(json(join(path, 'environment-before.json')))) throw new Error('記事または設定が変更されています。');
-  }
-  catch (error) { status = 'invalid'; reason = [reason, `記憶回収失敗: ${error.message}`].filter(Boolean).join(' / '); }
-  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, operations: 'self-reported-until-event-verification' });
+    if (!events.length) throw new Error('ランタイムイベントが未取得です。');
+  });
+  captureSnapshots(path, trial, errors);
+  if (answerStatus === 'completed' && recordStatus === 'completed') outputStatus = 'completed';
+  if (executionStatus !== 'completed') errors.push(`実行状態: ${executionStatus}`);
+  const status = errors.length ? 'invalid' : 'completed', reason = errors.length ? errors.join(' / ') : null;
+  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, executionStatus, outputStatus, launchStatus, unconfirmedChecks, comparison: 'parent-unassessed', operations: 'self-reported-until-event-verification' });
   return { status, reason };
 }
 export function judgeTrial(path, judgment) {
   const trial = json(join(path, 'trial.json')), result = json(join(path, 'result.json'));
-  exact(judgment, ['trialId', 'findings', 'unconfirmed', 'eventVerification']);
-  if (judgment.trialId !== trial.trialId || result.status !== 'completed') throw new Error('判定対象が不正です。');
+  if (judgment.trialId !== trial.trialId || !['completed', 'invalid', 'failed'].includes(result.status)) throw new Error('判定対象が不正です。');
+  if (!Array.isArray(judgment.unconfirmed) || judgment.unconfirmed.some(value => typeof value !== 'string' || !value.trim())) throw new Error('未確認事項の形式が不正です。');
+  if (judgment.kind === 'diagnostic') {
+    exact(judgment, ['trialId', 'kind', 'observations', 'unconfirmed']);
+    if (!Array.isArray(judgment.observations) || !judgment.observations.length) throw new Error('診断の観察結果が必要です。');
+    const artifacts = ['input.txt', 'trial.json', 'launch.json', 'result.json', 'answer.txt', 'execution.json', 'runtime-events.bin', 'final-output.json', 'output-event.bin', 'memory-before.json', 'memory-after.json', 'environment-before.json', 'environment-after.json'];
+    for (const observation of judgment.observations) {
+      exact(observation, ['observation', 'artifact', 'reason']);
+      text(observation.observation); text(observation.reason);
+      if (observation.artifact !== null && (!artifacts.includes(observation.artifact) || !lstatSync(join(path, observation.artifact)).isFile())) throw new Error('取得済み成果物の参照が必要です。');
+    }
+    save(join(path, 'judgment.json'), { ...judgment, assessment: 'diagnostic-only', usefulness: 'user-unrated', outcome: 'not-observed' });
+    return;
+  }
+  exact(judgment, ['trialId', 'kind', 'findings', 'unconfirmed', 'eventVerification']);
+  if (judgment.kind !== 'assessment' || result.status !== 'completed') throw new Error('判定対象が不正です。');
   const answer = readFileSync(join(path, 'answer.txt'), 'utf8');
   if (!Array.isArray(judgment.findings) || judgment.findings.some(f => { exact(f, ['criterion', 'verdict', 'quote']); return !['met', 'violated', 'unconfirmed'].includes(f.verdict) || typeof f.criterion !== 'string' || typeof f.quote !== 'string' || !f.quote || !answer.includes(f.quote); })) throw new Error('回答原本の引用が必要です。');
   if (!Array.isArray(judgment.unconfirmed) || !Array.isArray(judgment.eventVerification)) throw new Error('判定の形式が不正です。');

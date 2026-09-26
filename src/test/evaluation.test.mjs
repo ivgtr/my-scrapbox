@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { prepare, writeBundle } from '../../evaluation/prepare.mjs';
 import { startTrial, bindLaunch, captureFixed, failTrial, runtimeChecks, captureCycle, judgeTrial } from '../../evaluation/trials.mjs';
-import { createFixture, cycleInput } from '../../evaluation/fixture.mjs';
+import { createFixture, cycleInput, stages } from '../../evaluation/fixture.mjs';
 const cases = JSON.parse(readFileSync(new URL('../../evaluation/cases.json', import.meta.url), 'utf8'));
 const source = new URL('../../', import.meta.url).pathname;
 const options = { availableAt: '2026-09-26T12:00:00.000Z', targetHead: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim() };
@@ -75,7 +75,7 @@ test('summary replacement, wrong ID, invalid schema, missing output, and incompl
   const args = { childId: 'x', order: 99, runtime: 'x', delivery: 'inline', sentInput: readFileSync(join(retry, 'input.txt'), 'utf8'), checks: {} };
   assert.throws(() => bindLaunch(retry, args), /契約/);
 });
-test('fixed launch records unknown settings without claiming comparison validity; cycle remains strict', t => {
+test('launch records unknown settings without claiming comparison validity for both methods', t => {
   const root = temp(t), path = trial(root, 'observed');
   const event = join(root, 'events.txt'); writeFileSync(event, 'MOCK final event');
   const checks = Object.fromEntries(runtimeChecks.map(key => [key, { status: 'verified', value: `MOCK ${key}`, evidencePath: event, reason: null }]));
@@ -98,8 +98,8 @@ test('fixed launch records unknown settings without claiming comparison validity
   assert.equal(Buffer.from(recorded.tools.bytes, 'base64').toString(), readFileSync(event, 'utf8'));
   const fixture = createFixture(source, join(root, 'cycle-fixture'), { ...options, stage: 'form' });
   const cycle = startTrial(root, { trialId: 'strict-cycle', method: 'cycle', input: cycleInput(fixture, 'strict-cycle'), fixture: fixture.fixture });
-  assert.throws(() => bindLaunch(cycle, { ...args, delivery: 'file', childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') }), /今回の対象外/);
-  assert.throws(() => bindLaunch(cycle, { ...args, childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') }), /実経路.*未確認/);
+  bindLaunch(cycle, { ...args, childId: 'mock-cycle', order: 2, sentInput: readFileSync(join(cycle, 'input.txt'), 'utf8') });
+  assert.equal(JSON.parse(readFileSync(join(cycle, 'launch.json'))).evidence.modelSettings.status, 'unconfirmed');
 });
 test('capture retains original and events when launch or execution evidence is incomplete', t => {
   const root = temp(t), event = join(root, 'event.txt'); writeFileSync(event, 'MOCK raw event\n');
@@ -117,7 +117,7 @@ test('capture retains original and events when launch or execution evidence is i
     assert.equal(result.status, 'invalid'); assert.equal(result.outputStatus, 'completed');
     assert.equal(result.executionStatus, executionStatus);
     assert.equal(result.launchStatus, executionStatus === 'completed' ? 'missing' : 'bound');
-    assert.throws(() => judgeTrial(path, { trialId: executionStatus, findings: [], unconfirmed: [], eventVerification: [] }), /判定対象/);
+    assert.throws(() => judgeTrial(path, { kind: 'assessment', trialId: executionStatus, findings: [], unconfirmed: [], eventVerification: [] }), /判定対象/);
   }
   const missing = trial(root, 'missing-raw');
   captureFixed(missing, { sourcePath: join(root, 'absent'), sourceKind: 'runtime-final', eventPath: event, executionStatus: 'failed' });
@@ -158,11 +158,11 @@ test('stage fixtures contain only synthetic articles and captured memory; artifa
   assert.match(cli('session:start'), /syncMode=none/);
   assert.match(cli('read', '通知試行', '--json'), /synthetic-v1/);
   assert.throws(() => createFixture(source, join(root, 'bad'), { ...options, stage: 'reuse', previousTrial: path }));
-  assert.equal(captureCycle(path, { eventPath: event }).status, 'invalid');
+  assert.equal(captureCycle(path, { eventPath: event, executionStatus: 'completed' }).status, 'invalid');
   assert.ok(existsSync(join(path, 'memory-after.json')));
-  assert.throws(() => judgeTrial(path, { trialId: 'cycle-form', findings: [], unconfirmed: [], eventVerification: [] }), /判定対象/);
+  assert.throws(() => judgeTrial(path, { kind: 'assessment', trialId: 'cycle-form', findings: [], unconfirmed: [], eventVerification: [] }), /判定対象/);
 });
-test('successful artifact capture permits only verified next-stage memory, without previous answers', t => {
+test('completed capture permits next-stage memory with unconfirmed operations, without previous answers', t => {
   const root = temp(t);
   const fixture = createFixture(source, join(root, 'first'), { ...options, stage: 'form' });
   const path = startTrial(root, { trialId: 'success-form', method: 'cycle', input: cycleInput(fixture, 'success-form'), fixture: fixture.fixture });
@@ -175,9 +175,10 @@ test('successful artifact capture permits only verified next-stage memory, witho
   writeFileSync(event, `memory:create\n${stdout}`);
   writeFileSync(join(fixture.fixture, 'artifacts/answer.txt'), 'テスト回答原本\n');
   writeFileSync(join(fixture.fixture, 'artifacts/execution.json'), JSON.stringify({ trialId: 'success-form', stage: 'form', status: 'completed', usedRecords: [{ id: saved.id, revision: saved.revision }], operations: [{ command: 'memory:create', eventRef: 'mock-event' }], error: null }));
-  assert.equal(captureCycle(path, { eventPath: event }).status, 'completed');
-  assert.throws(() => judgeTrial(path, { trialId: 'success-form', findings: [{ criterion: 'mock', verdict: 'met', quote: '存在しない文' }], unconfirmed: [], eventVerification: [] }), /原本/);
-  judgeTrial(path, { trialId: 'success-form', findings: [{ criterion: 'fixture only', verdict: 'met', quote: 'テスト回答原本' }], unconfirmed: ['モデル挙動は未検証'], eventVerification: [{ command: 'memory:create', status: 'verified', eventQuote: stdout }] });
+  assert.equal(captureCycle(path, { eventPath: event, executionStatus: 'completed' }).status, 'completed');
+  assert.throws(() => judgeTrial(path, { kind: 'assessment', trialId: 'success-form', findings: [{ criterion: 'mock', verdict: 'met', quote: '存在しない文' }], unconfirmed: [], eventVerification: [] }), /原本/);
+  assert.throws(() => judgeTrial(path, { kind: 'assessment', trialId: 'success-form', findings: [], unconfirmed: [], eventVerification: [{ command: 'memory:create', status: 'verified', eventQuote: '存在しないイベント' }] }), /イベント照合/);
+  judgeTrial(path, { kind: 'assessment', trialId: 'success-form', findings: [{ criterion: 'fixture only', verdict: 'met', quote: 'テスト回答原本' }], unconfirmed: ['モデル挙動は未検証'], eventVerification: [{ command: 'memory:create', status: 'unconfirmed', eventQuote: '' }] });
   const next = createFixture(source, join(root, 'second'), { ...options, stage: 'reuse', previousTrial: path });
   assert.equal(readFileSync(join(next.fixture, 'memory/records', `${saved.id}.md`), 'utf8'), readFileSync(join(fixture.fixture, 'memory/records', `${saved.id}.md`), 'utf8'));
   assert.equal(existsSync(join(next.fixture, 'artifacts/answer.txt')), false);
@@ -192,7 +193,145 @@ test('missing execution log preserves answer; missing memory still records termi
   const { event } = launch(root, path);
   writeFileSync(join(fixture.fixture, 'artifacts/answer.txt'), '取得できた回答\n');
   rmSync(join(fixture.fixture, 'memory'), { recursive: true });
-  assert.equal(captureCycle(path, { eventPath: event }).status, 'invalid');
+  assert.equal(captureCycle(path, { eventPath: event, executionStatus: 'completed' }).status, 'invalid');
   assert.equal(readFileSync(join(path, 'answer.txt'), 'utf8'), '取得できた回答\n');
   assert.match(JSON.parse(readFileSync(join(path, 'result.json'), 'utf8')).reason, /記憶回収失敗/);
+});
+
+function cycleTrial(root, id, stage = 'form', previousTrial = null) {
+  const fixture = createFixture(source, join(root, `${id}-fixture`), { ...options, stage, previousTrial });
+  const path = startTrial(root, { trialId: id, method: 'cycle', input: cycleInput(fixture, id), fixture: fixture.fixture });
+  return { path, fixture };
+}
+function cycleArtifacts(fixture, id, stage = 'form') {
+  writeFileSync(join(fixture.fixture, 'artifacts/answer.txt'), '取得済み回答\n');
+  writeFileSync(join(fixture.fixture, 'artifacts/execution.json'), JSON.stringify({ trialId: id, stage, status: 'completed', usedRecords: [], operations: [], error: null }));
+}
+test('cycle requires parent completion and retains artifacts on interrupted, failed, or unconfirmed execution', t => {
+  const root = temp(t);
+  for (const executionStatus of ['interrupted', 'failed', 'unconfirmed']) {
+    const { path, fixture } = cycleTrial(root, executionStatus), { event } = launch(root, path);
+    cycleArtifacts(fixture, executionStatus);
+    for (const value of [undefined, 'unknown']) assert.throws(() => captureCycle(path, { eventPath: event, executionStatus: value }), /実行状態/);
+    assert.equal(existsSync(join(path, 'result.json')), false);
+    assert.equal(captureCycle(path, { eventPath: event, executionStatus }).status, 'invalid');
+    const result = JSON.parse(readFileSync(join(path, 'result.json')));
+    assert.equal(result.executionStatus, executionStatus);
+    assert.equal(result.outputStatus, 'completed');
+    for (const file of ['answer.txt', 'execution.json', 'runtime-events.bin', 'memory-after.json', 'environment-after.json']) assert.ok(existsSync(join(path, file)));
+    assert.throws(() => createFixture(source, join(root, `${executionStatus}-next`), { ...options, stage: 'reuse', previousTrial: path }));
+  }
+});
+test('cycle captures remaining artifacts independently when launch, answer, log, events, memory, or environment fail', t => {
+  const root = temp(t);
+  for (const failure of ['launch', 'answer', 'missing-log', 'malformed-log', 'events', 'memory', 'environment']) {
+    const { path, fixture } = cycleTrial(root, failure), { event } = launch(root, path);
+    cycleArtifacts(fixture, failure);
+    const missing = { launch: join(path, 'launch.json'), answer: join(fixture.fixture, 'artifacts/answer.txt'), 'missing-log': join(fixture.fixture, 'artifacts/execution.json'), events: event, memory: join(fixture.fixture, 'memory'), environment: join(fixture.fixture, 'archive/articles.json') };
+    if (failure === 'malformed-log') writeFileSync(join(fixture.fixture, 'artifacts/execution.json'), '{bad json');
+    else rmSync(missing[failure], { recursive: true });
+    assert.equal(captureCycle(path, { eventPath: event, executionStatus: 'completed' }).status, 'invalid');
+    const skipped = { answer: 'answer.txt', 'missing-log': 'execution.json', events: 'runtime-events.bin', memory: 'memory-after.json', environment: 'environment-after.json' }[failure];
+    for (const file of ['answer.txt', 'execution.json', 'runtime-events.bin', 'memory-after.json', 'environment-after.json']) if (file !== skipped) assert.ok(existsSync(join(path, file)), `${failure}: ${file}`);
+    if (failure === 'malformed-log') assert.equal(readFileSync(join(path, 'execution.json'), 'utf8'), '{bad json');
+    assert.ok(JSON.parse(readFileSync(join(path, 'result.json'))).reason);
+  }
+});
+test('diagnosis preserves invalid trial state and bytes, accepts absent evidence, and rejects invalid references', t => {
+  const root = temp(t), { path, fixture } = cycleTrial(root, 'diagnose'), { event } = launch(root, path);
+  writeFileSync(join(fixture.fixture, 'artifacts/answer.txt'), '保存後に失敗した回答');
+  captureCycle(path, { eventPath: event, executionStatus: 'failed' });
+  const before = Object.fromEntries(readdirSync(path).map(file => [file, readFileSync(join(path, file))]));
+  const observation = { observation: '実行記録が保存されていない', artifact: 'result.json', reason: '回収時の欠落理由を確認した' };
+  const judgment = { trialId: 'diagnose', kind: 'diagnostic', observations: [observation, { observation: '原因は未特定', artifact: null, reason: '実行記録が存在しないため' }], unconfirmed: ['保存失敗の原因'] };
+  for (const artifact of ['../result.json', '/tmp/other', 'execution.json', 'unknown']) assert.throws(() => judgeTrial(path, { ...judgment, observations: [{ ...observation, artifact }] }));
+  assert.throws(() => judgeTrial(path, { ...judgment, observations: [{ ...observation, reason: '' }] }));
+  assert.throws(() => judgeTrial(path, { ...judgment, kind: 'unknown' }));
+  judgeTrial(path, judgment);
+  assert.equal(JSON.parse(readFileSync(join(path, 'judgment.json'))).assessment, 'diagnostic-only');
+  for (const [file, bytes] of Object.entries(before)) assert.deepEqual(readFileSync(join(path, file)), bytes);
+  assert.throws(() => judgeTrial(path, judgment), /EEXIST/);
+  assert.throws(() => createFixture(source, join(root, 'diagnose-next'), { ...options, stage: 'reuse', previousTrial: path }));
+  const failed = trial(root, 'failed-diagnosis'); failTrial(failed, '起動できなかった');
+  judgeTrial(failed, { ...judgment, trialId: 'failed-diagnosis' });
+  assert.equal(JSON.parse(readFileSync(join(failed, 'result.json'))).status, 'failed');
+});
+test('cycle file delivery validates its two artifact paths and preserves unconfirmed checks', t => {
+  const root = temp(t), { path, fixture } = cycleTrial(root, 'file-cycle');
+  const checks = Object.fromEntries(runtimeChecks.map(key => [key, { status: 'unconfirmed', value: null, evidencePath: null, reason: '取得できない' }]));
+  const envelope = { inputPath: join(path, 'input.txt'), output: { answer: join(fixture.fixture, 'artifacts/answer.txt'), execution: join(fixture.fixture, 'artifacts/execution.json') }, instructions: '指定入力を読み指定された二つの成果物を保存する' };
+  const args = { childId: 'file-cycle-child', order: 1, runtime: 'mock', delivery: 'file', checks };
+  for (const invalid of [
+    { ...envelope, inputPath: join(root, 'other') },
+    { inputPath: envelope.inputPath, outputPath: join(path, 'runtime/final-output.json'), instructions: envelope.instructions },
+    { ...envelope, output: { ...envelope.output, answer: join(path, 'runtime/final-output.json') } },
+    { ...envelope, output: { ...envelope.output, execution: join(root, 'other') } },
+    { ...envelope, output: { ...envelope.output, extra: true } }
+  ]) assert.throws(() => bindLaunch(path, { ...args, sentInput: JSON.stringify(invalid) }));
+  const input = readFileSync(envelope.inputPath, 'utf8');
+  writeFileSync(envelope.inputPath, input + ' ');
+  assert.throws(() => bindLaunch(path, { ...args, sentInput: JSON.stringify(envelope) }), /固定入力/);
+  writeFileSync(envelope.inputPath, input);
+  bindLaunch(path, { ...args, sentInput: JSON.stringify(envelope) });
+  const record = JSON.parse(readFileSync(join(path, 'launch.json')));
+  assert.notEqual(record.inputHash, record.sentInputHash);
+  cycleArtifacts(fixture, 'file-cycle');
+  const event = join(root, 'event'); writeFileSync(event, 'MOCK completion');
+  assert.equal(captureCycle(path, { eventPath: event, executionStatus: 'completed' }).status, 'completed');
+  assert.deepEqual(JSON.parse(readFileSync(join(path, 'result.json'))).unconfirmedChecks, runtimeChecks);
+});
+test('stage transitions keep completion, head, order and snapshot checks; final request does not reveal correction', t => {
+  const root = temp(t);
+  let previousTrial = null;
+  for (const stage of stages) {
+    const { path, fixture } = cycleTrial(root, `sequence-${stage}`, stage, previousTrial), { event } = launch(root, path);
+    if (stage === 'reuse-corrected') {
+      assert.match(fixture.request, /現在は何が分かっていますか/);
+      assert.ok(!/通知は全員読め|対応担当は決まっていません|必要な人は通知を読め/.test(fixture.request));
+    }
+    cycleArtifacts(fixture, `sequence-${stage}`, stage);
+    if (stage === 'form') {
+      const logPath = join(fixture.fixture, 'artifacts/execution.json');
+      const log = JSON.parse(readFileSync(logPath));
+      log.operations = [{ command: 'session:start', eventRef: null }];
+      writeFileSync(logPath, JSON.stringify(log));
+      writeFileSync(event, 'MOCK session:start completion');
+    }
+    captureCycle(path, { eventPath: event, executionStatus: 'completed' });
+    assert.throws(() => judgeTrial(path, { trialId: `sequence-${stage}`, findings: [], unconfirmed: [], eventVerification: [] }), /契約/);
+    judgeTrial(path, { trialId: `sequence-${stage}`, kind: 'assessment', findings: [], unconfirmed: ['操作の観測不足'], eventVerification: stage === 'form' ? [{ command: 'session:start', status: 'verified', eventQuote: 'MOCK session:start completion' }] : [] });
+    if (stage === 'form') {
+      assert.throws(() => createFixture(source, join(root, 'wrong-head'), { targetHead: 'a'.repeat(40), stage: 'reuse', previousTrial: path }), /前段階/);
+      const judgmentPath = join(path, 'judgment.json'), judgment = readFileSync(judgmentPath, 'utf8');
+      writeFileSync(judgmentPath, JSON.stringify({ ...JSON.parse(judgment), kind: 'diagnostic', assessment: 'diagnostic-only' }));
+      assert.throws(() => createFixture(source, join(root, 'diagnostic-completed'), { ...options, stage: 'reuse', previousTrial: path }), /前段階/);
+      writeFileSync(judgmentPath, judgment);
+      const resultPath = join(path, 'result.json'), result = readFileSync(resultPath, 'utf8');
+      writeFileSync(resultPath, JSON.stringify({ ...JSON.parse(result), executionStatus: 'unconfirmed' }));
+      assert.throws(() => createFixture(source, join(root, 'unknown-end'), { ...options, stage: 'reuse', previousTrial: path }), /前段階/);
+      writeFileSync(resultPath, result);
+      const snapshotPath = join(path, 'memory-after.json'), snapshot = readFileSync(snapshotPath, 'utf8');
+      writeFileSync(snapshotPath, JSON.stringify({ ...JSON.parse(snapshot), sha256: 'invalid' }));
+      assert.throws(() => createFixture(source, join(root, 'bad-snapshot'), { ...options, stage: 'reuse', previousTrial: path }), /snapshot/);
+      writeFileSync(snapshotPath, snapshot);
+    }
+    previousTrial = path;
+  }
+});
+test('reuse memory changes invalidate capture but preserve environment; failTrial also collects environment independently', t => {
+  const root = temp(t), first = cycleTrial(root, 'initial'), { event } = launch(root, first.path);
+  cycleArtifacts(first.fixture, 'initial');
+  captureCycle(first.path, { eventPath: event, executionStatus: 'completed' });
+  judgeTrial(first.path, { trialId: 'initial', kind: 'assessment', findings: [], unconfirmed: [], eventVerification: [] });
+  const next = cycleTrial(root, 'changed', 'reuse', first.path), nextLaunch = launch(root, next.path);
+  cycleArtifacts(next.fixture, 'changed', 'reuse');
+  writeFileSync(join(next.fixture.fixture, 'memory/index.md'), '変更禁止の段階で変更');
+  assert.equal(captureCycle(next.path, { eventPath: nextLaunch.event, executionStatus: 'completed' }).status, 'invalid');
+  assert.match(JSON.parse(readFileSync(join(next.path, 'result.json'))).reason, /参照段階/);
+  assert.ok(existsSync(join(next.path, 'environment-after.json')));
+  const failed = cycleTrial(root, 'snapshot-failure');
+  rmSync(join(failed.fixture.fixture, 'memory'), { recursive: true });
+  failTrial(failed.path, '中断');
+  assert.ok(existsSync(join(failed.path, 'environment-after.json')));
+  assert.match(JSON.parse(readFileSync(join(failed.path, 'result.json'))).snapshotError, /記憶回収失敗/);
 });

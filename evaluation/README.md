@@ -20,7 +20,7 @@ node evaluation/prepare.mjs evaluation/cases.json /tmp/evaluation-bundle 2026-09
 
 `trials.mjs`は親が利用する小さな記録APIです。入力・送信証跡・原本・イベントの保存と契約検査を担当します。モデル指定、モデル呼び出し、ランタイムイベントの取得、参照範囲の指定と比較の成立判断は実施側の責務です。モデル別ランナーや評価用Skillはありません。
 
-親は次の6項目について確認できた値・根拠と未確認事項を記録します。各項目はランタイムの仕様・実効設定・可視イベントを根拠にし、子の自己申告を使いません。固定比較では全項目verifiedを記録APIの起動条件にはしません。今回の固定比較は、入力ファイルへの参照を通常のサブAgentへ委任します。他条件・親の判定・個人データを参照しない指示を渡しますが、ファイル環境の共有を許容し、アクセス不能の保証は実施しません。この限界と未加工原本の取得経路を記録します。モデル・設定の指定は実施段階で決め、未確認の実効値は補いません。同一条件を確認できない比較は、その限界を明示します。
+親は次の6項目について確認できた値・根拠と未確認事項を記録します。各項目はランタイムの仕様・実効設定・可視イベントを根拠にし、子の自己申告を使いません。固定比較・実経路とも、全項目verifiedを記録APIの起動条件にはしません。今回の固定比較は、入力ファイルへの参照を通常のサブAgentへ委任します。他条件・親の判定・個人データを参照しない指示を渡しますが、ファイル環境の共有を許容し、アクセス不能の保証は実施しません。この限界と未加工原本の取得経路を記録します。モデル・設定の指定は実施段階で決め、未確認の実効値は補いません。同一条件を確認できない比較は、その限界を明示します。
 
 | checks項目 | 必要な成立根拠 |
 | --- | --- |
@@ -40,7 +40,7 @@ node evaluation/prepare.mjs evaluation/cases.json /tmp/evaluation-bundle 2026-09
 - 確認済み: `{ status: 'verified', value: '確認した値', evidencePath: '仕様・設定・イベントのファイル', reason: null }`
 - 未確認: `{ status: 'unconfirmed', value: null, evidencePath: null, reason: '確認できない理由' }`
 
-実経路（cycle）は引き続き全項目verifiedとdelivery=inlineを要求します。今回の整理で記憶循環の成立条件は変更しません。
+実経路（cycle）でも未確認事項をそのまま保存し、inlineとfileを受け付けます。未確認事項をverifiedへ変換せず、原本の回収・実行終了・観測の十分さを分けて扱います。
 
 ```js
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -58,12 +58,12 @@ captureFixed(path, {
   sourcePath: rawFinalOutputFile, sourceKind: 'runtime-final', eventPath: outputEventFile,
   executionStatus: 'completed' // 親がランタイムの終了イベント・終了状態を確認した値
 });
-// 未完了ならcaptureの代わりにfailTrial(path, '実際の失敗理由')。
+// 未完了でも取得可能な成果物はcaptureで保持する。回収を行えない場合はfailTrialへ理由を残す。
 ```
 
 `startTrial`は試行ID・方式・条件・対象HEAD・入力全文とSHA-256を保存します。`bindLaunch`は送信後に全文一致を検査し、確認状況、子ID、実行順、記録時刻を保存します。起動前の成立確認を代行せず、記録時刻は実際の起動時刻とは限りません。確認済み根拠ファイルはbytesとハッシュを保持し、未確認項目はnullと理由を保持します。親の会話、他条件、rubricは入力へ含めません。`delivery`は必須で、`inline`（入力全文を送る）か`file`（パスを送る）です。送信要求・子ID・イベント・最終出力の対応付けは実施側が確認します。
 
-fileでは実際の送信全文をJSON `{ inputPath, outputPath, instructions }`にし、inputPathは試行の`input.txt`の絶対パス、outputPathは試行の`runtime/final-output.json`の絶対パスに限ります。instructionsは指定入力を読み回答原本を保存する依頼であり、rubricや他条件を含めません。入力ファイルのハッシュを再確認し、`inputHash`と`sentInputHash`を別保存します。パス指定は子が読んだことや参照先の隔離を証明しません。
+固定比較のfileでは実際の送信全文をJSON `{ inputPath, outputPath, instructions }`にし、inputPathは試行の`input.txt`の絶対パス、outputPathは試行の`runtime/final-output.json`の絶対パスに限ります。instructionsは指定入力を読み回答原本を保存する依頼であり、rubricや他条件を含めません。入力ファイルのハッシュを再確認し、`inputHash`と`sentInputHash`を別保存します。パス指定は子が読んだことや参照先の隔離を証明しません。
 
 固定比較の回答原本は次のJSONです。inlineでは最終出力として返し、fileでは子自身が指定されたoutputPathへ保存します。answerは回答全文であり、回答についての説明や要約ではありません。子の返却報告から原本を復元しません。
 
@@ -75,7 +75,11 @@ fileでは実際の送信全文をJSON `{ inputPath, outputPath, instructions }`
 
 `executionStatus`は必須で、`completed` / `failed` / `interrupted` / `unconfirmed`のみ受け付けます。子のJSON内のstatusから推測せず、親がイベント・プロセス終了状態から指定します。resultには`outputStatus`（原本契約）、`executionStatus`（実行）、`launchStatus`（送信証跡）、`unconfirmedChecks`を分けて保存します。原本・イベント・起動証跡が揃い、実行がcompletedなら試行のstatusをcompletedにしますが、これは比較成立を意味しません。`comparison: 'parent-unassessed'`を保存し、比較の成立と限界は親がREADMEへ記録します。
 
-判定は`judgeTrial(path, { trialId, findings, unconfirmed, eventVerification })`で別保存します。findingsは `{ criterion, verdict: 'met'|'violated'|'unconfirmed', quote }`。quoteは回答原本の実在する箇所を必須とします。根拠箇所を取得できない判断はunconfirmedへ残します。判定は親による暫定的な規約適合評価であり、本人評価とは分けます。
+通常判定は`judgeTrial(path, { trialId, kind: 'assessment', findings, unconfirmed, eventVerification })`でcompletedの試行に別保存します。findingsは `{ criterion, verdict: 'met'|'violated'|'unconfirmed', quote }`。quoteは回答原本の実在する箇所を必須とします。根拠箇所を取得できない判断はunconfirmedへ残します。判定は親による暫定的な規約適合評価であり、本人評価とは分けます。
+
+診断は`judgeTrial(path, { trialId, kind: 'diagnostic', observations, unconfirmed })`でcompleted・invalid・failedの試行へ保存できます。observationsは空でない配列で、各項目は `{ observation: '観察内容', artifact: 'result.json', reason: 'その観察の理由' }`です。artifactは試行内で取得済みの入力・起動情報・結果・回答原本・実行記録・イベント・記憶と環境の前後snapshotに限ります。根拠成果物がない場合はnullにし、reasonへ取得できない理由と判断の限界を明示します。存在しないファイルや任意パスへの参照は拒否します。回答引用と操作ごとのイベント照合は診断には要求しません。unconfirmedは通常判定・診断とも空でない文字列の配列です（事項がなければ空配列）。
+
+診断は`assessment: 'diagnostic-only'`としてjudgment.jsonへ保存し、試行状態と成果物を変更しません。成功判定・比較成立・次段階の開始には使いません。通常判定と診断は同じ試行に重ねて保存せず、保存済み判定を上書きしません。kindの省略・未知の形式は拒否します。過去の記録は変換・再判定しません。
 
 完了回答は再生成しません。固定比較の未完了条件だけ、同じbundleのrunから新しい試行ID・新しい子で開始します。試行ID以外の入力は保持します。既存ディレクトリ・終了済み試行・判定は上書きできません。失敗理由を直すと条件が変わる場合は、別bundleとし比較を混ぜません。
 
@@ -92,9 +96,10 @@ const path = startTrial(trialsDirectory, {
   trialId: 'cycle-one-form', method: 'cycle',
   input: cycleInput(fixture, 'cycle-one-form'), fixture: fixture.fixture
 });
-// 新しい子にinput.txt全文を送信し、bindLaunchで起動・送信証跡を保存する。
+// 新しい子へinlineまたはfileで入力を渡し、bindLaunchで起動・送信証跡を保存する。
 // 子の最終返却は識別情報・状態・成果物参照・失敗理由だけとして扱う。
-// captureCycle(path, { eventPath: runtimeEventsFile })で成果物を直接回収する。
+// captureCycle(path, { eventPath: runtimeEventsFile, executionStatus: 'completed' })で直接回収する。
+// executionStatusは子の自己申告ではなく、親が確認したランタイムの終了状態。
 ```
 
 fixtureは指定HEADから通常のnpm scripts・README・規約・Skill・CLIを抽出し、独立したworkspaceブランチ、合成記事、空の記憶入口、syncMode=noneを作ります。gitの本人設定やフックは変更せず、commit・認証・依存導入・ネットワーク操作はしません。親の既存workspaceを変更しません。ローカルCLIに外部依存の導入は不要です。
@@ -107,11 +112,17 @@ fixtureは指定HEADから通常のnpm scripts・README・規約・Skill・CLI�
 {"trialId":"cycle-one-form","stage":"form","status":"completed","usedRecords":[{"id":"記録ID","revision":1}],"operations":[{"command":"実行したコマンド","eventRef":null}],"error":null}
 ```
 
+cycleのfile委任では送信全文をJSON `{ inputPath, output: { answer, execution }, instructions }`にします。inputPathは試行のinput.txtの絶対パス、answerとexecutionは入力契約で指定したfixture内のartifacts/answer.txtとartifacts/execution.jsonの絶対パスです。固定比較のoutputPathやfinal-output.jsonは受け付けません。入力ハッシュと送信全文のハッシュを別保存します。パスの一致は参照範囲の隔離や実際の読み取りを証明しません。
+
 eventRefは取得できたCLI入出力への参照です。取得できないならnullとし創作しません。親はruntimeイベントを別取得し、`captureCycle`で回答・実行記録・memoryの保存前後を直接回収します。操作の記述は、照合するまでは自己申告です。子の返却から回答や記憶を復元しません。
+
+captureCycleにもexecutionStatusは必須で、固定比較と同じ4値を受け付けます。回答・実行記録・イベント・記憶・環境情報を独立して回収し、取得済みbytesは契約違反があっても保持します。不足と検査失敗をreasonへ集約します。resultはoutputStatus（回答と実行記録の契約）、executionStatus（親が確認した実行終了）、launchStatus、unconfirmedChecksを分けて保持します。全回収・契約検査が成功し、実行がcompletedの場合だけstatusをcompletedにします。比較成立は別判断で、comparisonはparent-unassessedです。failTrialでも記憶回収の失敗で環境回収を止めません。
 
 実経路のjudgeTrialには操作ごとの `{ command, status: 'verified'|'unconfirmed', eventQuote }` をeventVerificationへ渡します。順番とcommandを実行記録に対応させ、verifiedにはランタイムイベントの実在箇所が必要です。CLIの入力・出力・終了状態まで対応することを親が確認します。引用文字列の存在だけで操作の実行を保証しません。記憶形成・再利用・訂正の意味やrevisionの変化も、回答・前後snapshot・CLI証跡から親が判断します。
 
-次のfixtureは`createFixture(..., { targetHead, stage: 'reuse', previousTrial: path })`で作ります。前段階の完了、順番、同じHEAD、全操作のイベント照合を検査し、回収済みmemory snapshotだけを転送します。過去の回答・実行記録・入力・親の判定はfixtureへ含めません。これは同一試行内の段階移行であり、途中再開機能ではありません。中断・失敗時はformの初期fixtureから新しい試行としてやり直します。途中成果は残します。
+次のfixtureは`createFixture(..., { targetHead, stage: 'reuse', previousTrial: path })`で作ります。前段階のcompletedと親が確認した実行終了、通常判定の存在と試行ID、順番、同じHEAD、memory snapshotのハッシュ整合性を検査し、回収済みmemory snapshotだけを転送します。全操作verifiedは要求せず、空の操作一覧やunconfirmedだけで段階移行を止めません。操作の照合結果と未確認事項は前段階の判定に残します。過去の回答・実行記録・入力・親の判定はfixtureへ含めません。これは同一試行内の段階移行であり、途中再開機能ではありません。中断・失敗時はformの初期fixtureから新しい試行としてやり直します。途中成果は残します。
+
+訂正後再利用の判定では、最終依頼で訂正内容を再提示せず、回答と引き継いだ記憶から、通知試行の訂正後に何が分かったかを扱えていることを確認します。別チームで同じ原因があるとは断定せず、過去の確認事項と今回への推測・最初に確かめる条件を分けることを評価します。元の「処理の成功と仕事の成果は別」という理解が引き続き妥当な場合もあるため、旧理解の一律撤回や特定記録の更新を合格条件にはしません。適切な回答だけで記憶経由の再利用を断定せず、記憶・参照記録・取得できたイベントも確認し、観測できない点は未確認として残します。
 
 Claudeは特別な評価用Skillを使わず、自然な依頼からCLAUDE.md → AGENTS.md → 必要な通常Skill・CLIへ到達する経路を確認します。CodexとClaudeはbundle・試行記録・成立根拠・結果を分け、比較結果を混ぜません。
 
@@ -177,3 +188,9 @@ JS
 実行は各runを`startTrial`で新しい試行IDへ保存し、runtimeディレクトリを作成します。実際に送るJSONは`{ inputPath, outputPath, instructions }`です。指定入力だけを参照し、入力のoutput.formatに従う回答全文をoutputPathへ保存するよう依頼します。通常のサブAgentをfork_turns=none、モデル指定なしで1つずつ起動し、公開起動・完了応答を保存します。`bindLaunch(..., { delivery: 'file', sentInput, childId, runtime, order, checks })`、`captureFixed(..., { sourcePath: outputPath, sourceKind: 'designated-artifact', eventPath, executionStatus })`、`judgeTrial`の順で回収・判定します。原本がない場合は返却報告で補わず`failTrial`へ理由を残します。
 
 今回の3条件は完了済みなので再実行しません。未完了条件を再開する場合だけ、同じbundleのrun・新しい試行ID・新しい子を使います。失敗試行は保持します。参照指示やモデル・設定を変える場合は別bundleへ分けます。次のセッションは、必要なモデル・設定の確認方法を決めた上で記憶循環一例へ進みます。全例比較とClaude比較も今回未実施です。
+
+### 実装レビュー対応（2026-09-27）
+
+`db9bd41`への4件の指摘を確認し、利用者の承認に基づき、cycleの実行終了確認・独立回収、失敗時の診断保存、訂正後再利用の設問を修正しました。計画済みの制約緩和として、cycleの未確認checksとfile委任を許容し、補足的なイベント照合不足による段階移行停止を外しました。実行終了・段階順・同じHEAD・記憶引継ぎの検査は維持しています。本体CLI・Skill・新しいランナーは変更していません。モデル評価と本人評価は未実施です。
+
+検証はモデルなしの評価関連15件と全体102件が成功しました（失敗・skipなし）。`git diff --check`も成功しています。次の操作は変更差分の確認と、必要な場合のモデル評価です。今回の承認範囲にはモデル評価を含めていません。
