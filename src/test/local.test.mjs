@@ -206,6 +206,53 @@ test('workspace init rejects dirty trees, existing ignored files, invalid URLs a
   assert.equal(git(root, 'branch', '--show-current'), 'main');
 });
 
+test('CLI initialization explains user login and verification without authenticating or syncing', t => {
+  const root = fixture(t, false);
+  const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), 'workspace:init', projectUrl], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /workspace を初期化しました/);
+  assert.match(result.stdout, /利用者向けの次の操作: 本人が別ターミナルで npm run auth:login/);
+  assert.match(result.stdout, /完了をエージェントに伝えて/);
+  assert.match(result.stdout, /auth:check/);
+  assert.match(result.stdout, /npm run sync と npm run status/);
+  assert.equal(git(root, 'branch', '--show-current'), 'workspace');
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'cosense.config.json'), 'utf8')), { projectUrl });
+  assert.ok(existsSync(join(root, 'memory/index.md')));
+  assert.equal(existsSync(join(root, '.local')), false);
+  assert.equal(existsSync(join(root, 'archive')), false);
+});
+
+test('CLI missing configuration and memory only report guidance without creating personal files', t => {
+  const root = fixture(t, false);
+  const before = git(root, 'status', '--porcelain');
+  for (const command of ['session:start', 'status', 'sync', 'memory']) {
+    const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), command], { encoding: 'utf8' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /未設定|未作成/);
+    assert.match(result.stderr, /利用者向けの次の操作:/);
+    assert.match(result.stderr, /希望する場合だけ/);
+    assert.doesNotMatch(result.stderr, /config\.example|workspace:init/);
+  }
+  assert.equal(git(root, 'status', '--porcelain'), before);
+  assert.equal(git(root, 'branch', '--show-current'), 'main');
+  assert.equal(git(root, 'branch', '--list', 'workspace'), '');
+  for (const name of ['cosense.config.json', 'memory', 'archive', '.local']) assert.equal(existsSync(join(root, name)), false);
+});
+
+test('CLI rejects existing workspace data and preserves it', t => {
+  const root = fixture(t);
+  const config = readFileSync(join(root, 'cosense.config.json'), 'utf8');
+  const memory = readFileSync(join(root, 'memory/index.md'), 'utf8');
+  git(root, 'add', '.'); git(root, 'commit', '-m', 'Personal data');
+  git(root, 'switch', 'main');
+  const result = spawnSync(process.execPath, [join(root, 'src/cli/local.mjs'), 'workspace:init', projectUrl], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /workspace ブランチが既に存在/);
+  assert.equal(git(root, 'branch', '--show-current'), 'main');
+  assert.equal(git(root, 'show', 'workspace:cosense.config.json'), config.trim());
+  assert.equal(git(root, 'show', 'workspace:memory/index.md'), memory.trim());
+});
+
 test('authentication is GET-only, local, service-account first, and redirections are disabled', async t => {
   const root = fixture(t); mkdirSync(join(root, '.local/cosense'), { recursive: true });
   assert.throws(() => authenticatedGet(root, projectUrl), /認証/);

@@ -4,40 +4,29 @@ Scrapbox（Cosense）の記事をローカルへ同期し、オフラインで�
 
 ## はじめる
 
-Node.js 24以上が必要です。fork・clone後、変更のない `main` で実行します。
+Node.js 24以上と質問ツールを使えるエージェントが必要です。fork・clone後、変更のない `main` で、URLを自分のプロジェクトに置き換えてSkillを明示呼び出しします。
 
-```sh
-npm ci
-npm run workspace:init -- https://scrapbox.io/YOUR_ACTUAL_PROJECT
+Codex:
+
+```text
+$workspace-setup https://scrapbox.io/YOUR_PROJECT
 ```
 
-個人用の `workspace` ブランチ、設定、記憶の入口を作成します。既存ブランチやファイルは上書きしません。
+Claude:
 
-本人が別ターミナルでログインし、初回同期を行います。
-
-```sh
-npm run auth:login
-npm run auth:check
-npm run sync
+```text
+/workspace-setup https://scrapbox.io/YOUR_PROJECT
 ```
 
-PATはCLIの案内に従って入力し、チャットやコマンド引数には渡さないでください。Service Accountの場合は `npm run cosense -- login @project` を使います。`auth:check` はPAT専用です。
+[セットアップSkill](.agents/skills/workspace-setup/SKILL.md)が同期モードの選択、依存関係・`workspace`・設定・記憶の準備を行います。本人が別ターミナルでログインし、完了を回答すると初回同期・確認へ進みます。既存データは上書きせず、READMEの参照だけでは開始しません。
+
+PATは本人のターミナルで入力し、チャットやコマンド引数に渡さないでください。Service Accountを使う場合はエージェントに伝えてください。
 
 ## 普段の使い方
 
 Agentはセッションの最初に `npm run session:start` を実行し、記憶・同期結果・取得時点を確認します。
 
-`cosense.config.json` は `projectUrl`（必須）と `syncMode`（省略可能）を設定します。未知の項目や不正な値は拒否します。
-
-| syncMode | セッション開始時の動作 |
-| --- | --- |
-| `none`（既定） | オフラインで状態を表示し、同期を案内します。 |
-| `fetch` | 記事の差分を取得し、索引を更新します。 |
-| `commit` | fetchに加え、記事アーカイブだけをcommitします。 |
-
-同期は `workspace` で行い、認証とネットワーク接続が必要です。初回は全件、以降は追加・更新・タイトル変更・削除を反映します。手動の `npm run sync` はモードに関係なく取得・更新だけを行います。常駐処理・定期実行・自動pushはありません。
-
-同期は送信間隔を空け、HTTP 429では上限付きで待機・再試行します。途中で停止しても `npm run sync` で再開でき、取得済み本文を再利用します。検索・閲覧に使う記事は全件の確認後に更新し、途中成果は表示しません。
+「同期して」「同期を再開して」と依頼すると、[同期Skill](.agents/skills/workspace-sync/SKILL.md)が状態に応じて取得・再開・復旧します。Codexの `$workspace-sync`、Claudeの `/workspace-sync` でも呼び出せます。「同期状態を確認して」だけならオフラインで表示します。
 
 以下の操作はオフラインで使えます。未同期の変更は表示されません。
 
@@ -51,9 +40,23 @@ Agentはセッションの最初に `npm run session:start` を実行し、記�
 
 記事の作成・編集には公式 [Cosense Skill & CLI](https://github.com/helpfeel/cosense-cli) を使い、反映後に同期します。入口は `npm run cosense -- ...`、対象プロジェクトは `@project` です。ローカルの記事は直接編集しません。別プロジェクトや画像本体は自動取得しません。
 
-Agentは完了時に決定・理由・未完了事項・次の操作を記憶へ保存します。確認日と根拠を添え、長い記録は入口からリンクします。読み取りだけの依頼や記憶更新の禁止を優先し、秘密情報は保存しません。
+Agentは決定・理由・未完了事項・次の操作を、確認日と根拠を添えて記憶へ保存します。読み取りだけ・記憶更新禁止の指示を優先し、秘密情報は保存しません。
 
-## 保存と更新
+## 同期の設定
+
+`cosense.config.json` は `projectUrl`（必須）と `syncMode`（省略可能）を設定します。未知の項目や不正な値は拒否します。
+
+| syncMode | セッション開始時の動作 |
+| --- | --- |
+| `none`（既定） | オフラインで状態を表示し、同期を案内します。 |
+| `fetch` | 記事の差分を取得し、索引を更新します。 |
+| `commit` | fetchに加え、記事アーカイブだけをcommitします。 |
+
+同期は `workspace` で行い、認証とネットワーク接続が必要です。初回は全件、以降は追加・更新・タイトル変更・削除を反映します。手動の `npm run sync` はモードに関係なく取得・更新だけを行います。常駐処理・定期実行・自動pushはありません。
+
+途中停止は `npm run sync` で再開でき、取得済み本文を再利用します。記事は全件確認後に更新します。送信間隔とHTTP 429の待機・再試行にはCLIが対応します。
+
+## データの保存
 
 | 保存先 | 内容 |
 | --- | --- |
@@ -62,9 +65,11 @@ Agentは完了時に決定・理由・未完了事項・次の操作を記憶へ
 | `memory/index.md` と詳細Markdown | Agent記憶です。 |
 | `.local/` | 認証情報・索引・同期状態です。Git管理から除外します。 |
 
-`commit` モードは、同期成功後にHEADと異なるアーカイブだけを保存します。前回取得分も対象です。他のステージ内容は保持し、Gitの本人設定やフックは変更しません。設定・記憶は内容を確認して手動でcommitします。
+`commit` モードは同期成功後、前回取得分を含めHEADと異なるアーカイブだけをcommitします。他のステージ内容・Gitの本人設定・フックは保持します。設定・記憶のcommitは手動です。
 
 **公開先へworkspaceをpushすると、記事・記憶・設定も公開されます。**
+
+## テンプレートの更新
 
 `main` はテンプレート専用です。独立clone・共有worktreeとも、`workspace` で更新します。
 
@@ -72,13 +77,13 @@ Agentは完了時に決定・理由・未完了事項・次の操作を記憶へ
 npm run workspace:update
 ```
 
-既定では登録済みの `origin` の `main` を取得し、取得したコミットへworkspaceをrebaseします。fork元に追従する場合は、登録済みリモートを `git config --local cosense.templateRemote upstream` で指定してください。未登録の取得先には代替せず停止します。ローカルmainは変更しません。設定・Cosense認証・記事アーカイブは不要です。
+登録済み `origin` の `main` を取得し、workspaceをrebaseします。fork元に追従する場合は `git config --local cosense.templateRemote upstream` で登録済みリモートを指定します。未登録なら停止し、ローカルmainは変更しません。Cosense設定・認証・記事は不要です。
 
-未コミット・未追跡・ステージ済みの変更は更新用stashで退避し、成功後に復元します。Git管理外の `.local/` と既存stashは保持します。個人コミットのIDはrebaseで変わります。個人データをmainへマージしないでください。
+作業中の変更は更新用stashで退避・復元し、Git管理外の `.local/` と既存stashは保持します。rebaseで個人コミットのIDは変わります。個人データをmainへマージしないでください。
 
-競合時は通知の `git rebase --continue`・`git rebase --abort` と、ID付きのstash復元手順に従ってください。stash復元の競合ではrebaseは完了しており、自動再適用・削除は行いません。復元を確認して更新用stashを削除するまで、次の更新は停止します。同期・Git操作中も更新できません。
+競合時はCLIに表示するrebase続行・中止と、ID付きstash復元の案内に従ってください。stash復元の競合ではrebaseは完了済みです。復元確認・stash削除まで次の更新は停止し、同期・Git操作中も更新できません。
 
-更新前と復元後で依存定義が変わった場合だけ `npm ci` を案内します。インストール・記事同期・pushは自動実行しません。既存cloneへの初回導入は、この機能を含むmainが取得可能になってから行ってください。
+依存定義が変わった場合だけ `npm ci` を案内します。インストール・記事同期・pushは自動実行しません。
 
 ## 困ったとき
 
@@ -93,7 +98,7 @@ npm run workspace:update
 | 索引生成失敗 | `npm run index:rebuild` を実行します。 |
 | 同期ロックが残った | 同期が実行中でないことを確認して `.local/sync.lock` を削除します。 |
 
-保存・送信待機状態・commitのエラーは、通知の案内に従って原因を解消してください。記事取得後の索引生成やcommitの失敗では、取得済み記事を巻き戻しません。
+その他のエラーはCLIの原因・次の操作を確認してください。索引生成やcommitが失敗しても、取得済み記事は保持します。
 
 ## 開発・保守
 

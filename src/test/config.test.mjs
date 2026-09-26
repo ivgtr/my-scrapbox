@@ -18,7 +18,7 @@ function fixture(t) {
 test('unset personal configuration permits help but blocks project shortcuts', t => {
   const f = fixture(t);
   assert.deepEqual(resolveArgs(['--help'], f.root), ['--help']);
-  assert.throws(() => resolveArgs(['listPages', '@project'], f.root), /コピー/);
+  assert.throws(() => resolveArgs(['listPages', '@project'], f.root), /未設定/);
   assert.deepEqual(resolveArgs(['readPage', 'https://scrapbox.io/example/page'], f.root),
     ['readPage', 'https://scrapbox.io/example/page']);
 });

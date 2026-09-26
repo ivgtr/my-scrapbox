@@ -17,7 +17,7 @@ const commands = {
   },
   'workspace:init': {
     arguments: 'title',
-    run: async args => console.log(`workspace を初期化しました: ${initWorkspace(root, args[0])}\n本人がログイン後、npm run sync を実行してください。`)
+    run: async args => console.log(`workspace を初期化しました: ${initWorkspace(root, args[0])}\n利用者向けの次の操作: 本人が別ターミナルで npm run auth:login を実行し、完了をエージェントに伝えてください。PATは npm run auth:check で確認後、npm run sync と npm run status で初回取得を確認します。Service Accountは npm run cosense -- login @project を使い、認証確認は初回同期で行います。`)
   },
   'workspace:update': {
     arguments: 'none',
@@ -28,7 +28,7 @@ const commands = {
     run: async () => {
       try { process.stdout.write(readFileSync(join(root, 'memory/index.md'), 'utf8')); }
       catch (error) {
-        if (error.code === 'ENOENT') throw new Error('ローカル記憶は未作成です。npm run workspace:init -- <projectUrl> で初期化してください。');
+        if (error.code === 'ENOENT') throw new Error('ローカル記憶は未作成です。\n利用者向けの次の操作: 記憶なしで進められます。初回セットアップを希望する場合だけ、READMEの workspace-setup を明示呼び出ししてください。初期化済みなら再初期化は不要です。');
         throw error;
       }
     }
@@ -39,7 +39,7 @@ const commands = {
       const result = await syncArchive(root, projectUrl, { rebuild: args.includes('--rebuild') });
       console.log(`同期成功: ${result.count}件、${result.changed ? 'アーカイブ更新' : '変更なし'}。`);
       try { const db = openIndex(root, loadArchive(root, projectUrl)); db.close(); }
-      catch (error) { throw new Error(`記事同期は成功しましたが索引生成に失敗しました。npm run index:rebuild を実行してください。${error.message}`); }
+      catch (error) { throw new Error(`記事同期は成功しましたが索引生成に失敗しました。\n利用者向けの次の操作: npm run index:rebuild を実行してください。${error.message}`); }
     }
   },
   status: {
@@ -56,7 +56,7 @@ const commands = {
     arguments: 'title', project: true, archive: true,
     run: async ([title], { projectUrl, archive }) => {
       const page = archive.data.articles.find(p => normalizeTitle(p.title) === normalizeTitle(title));
-      if (!page) throw new Error('このタイトルの本文はアーカイブにありません。npm run links で被リンクを確認できます。');
+      if (!page) throw new Error('このタイトルの本文はアーカイブにありません。\n利用者向けの次の操作: npm run links で被リンクを確認できます。');
       console.log(`${pageUrl(projectUrl, page.title)}\n取得時点: ${page.fetchedAt}\n更新日時: ${page.updated}\npageId: ${page.id}\ncommitId: ${page.commitId}\n\n${page.lines.map(l => l.text).join('\n')}`);
     }
   },

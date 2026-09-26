@@ -19,7 +19,7 @@ export function archiveStatus(root, projectUrl, archive, onWarning) {
         Object.keys(state).some(key => !['projectUrl', 'checkedAt'].includes(key)) ||
         state.projectUrl !== projectUrl || typeof state.checkedAt !== 'string' ||
         !Number.isFinite(Date.parse(state.checkedAt))) {
-      throw new Error('同期状態が不正です。npm run sync で再取得してください。');
+      throw new Error('同期状態が不正です。\n利用者向けの次の操作: npm run sync で再取得してください。');
     }
     checkedAt = state.checkedAt;
   } catch (error) {
@@ -65,7 +65,7 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
     catch (error) { print(error.message); print('記事参照・自動commitを停止します。'); return false; }
   }
   if (syncMode === 'none') {
-    print('同期は行いません。Scrapboxとの差分確認・反映には npm run sync を実行してください。');
+    print('同期は行いません。\n利用者向けの次の操作: Scrapboxとの差分確認・反映が必要な場合は npm run sync を実行してください。');
   } else {
     let result;
     try { result = await syncArchive(root, projectUrl, { get, now, clock, onProgress }); }
@@ -78,11 +78,11 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
     if (result) {
       print(`記事同期成功: ${result.count}件、${result.changed ? 'アーカイブ更新' : '変更なし'}。`);
       try { buildIndex(root, loadArchive(root, projectUrl)); print('索引準備成功。'); }
-      catch (error) { print(`索引生成失敗。記事取得は成功しています。npm run index:rebuild を実行してください: ${error.message}`); ok = false; }
+      catch (error) { print(`索引生成失敗。記事取得は成功しています。\n利用者向けの次の操作: npm run index:rebuild を実行してください: ${error.message}`); ok = false; }
       if (syncMode === 'commit') {
         try { print(commitArchive(root, projectUrl) ? '記事アーカイブをcommitしました。' : '記事アーカイブはHEADと一致しています。commit不要です。'); }
         catch (error) {
-          print(`記事取得は成功しましたがcommitに失敗しました: ${error.message}\nGit状態と本人設定・フックを確認してから npm run session:start を実行してください。`);
+          print(`記事取得は成功しましたがcommitに失敗しました: ${error.message}\n利用者向けの次の操作: Git状態と本人設定・フックを確認してから npm run session:start を実行してください。`);
           try { print(`commit失敗後のGit状態:\n${git(root, ['status', '--short']) || '変更なし'}`); }
           catch (statusError) { print(`Git状態の取得失敗: ${statusError.message}`); }
           ok = false;
@@ -92,11 +92,11 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
   }
   if (!existsSync(join(root, archivePath))) {
     print('取得時点: 未取得。');
-    if (syncMode === 'none' && ok) print('初回取得には npm run sync を実行してください。');
+    if (syncMode === 'none' && ok) print('利用者向けの次の操作: 初回取得が必要な場合は npm run sync を実行してください。');
   } else {
     try {
       print(JSON.stringify(archiveStatus(root, projectUrl, loadArchive(root, projectUrl), error => {
-        print(`同期状態を読み取れません。差分確認日時は不明です。npm run sync を実行してください: ${error.message}`);
+        print(`同期状態を読み取れません。差分確認日時は不明です。\n利用者向けの次の操作: npm run sync を実行してください: ${error.message}`);
         ok = false;
       }), null, 2));
       print('表示した取得時点の記事をローカルで参照できます。');

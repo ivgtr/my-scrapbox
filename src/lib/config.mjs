@@ -6,7 +6,7 @@ export function readConfig(root) {
     config = JSON.parse(readFileSync(new URL('cosense.config.json', root), 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') {
-      throw new Error('npm run workspace:init -- <projectUrl> で初期化するか、cosense.config.example.json をコピーして projectUrl を設定してください。');
+      throw new Error('cosense.config.json は未設定です。\n利用者向けの次の操作: 初回セットアップを希望する場合だけ、READMEの workspace-setup を明示呼び出ししてください。既に初期化済みなら workspace の設定と現在のブランチを確認してください。');
     }
     throw new Error('cosense.config.json を読み取れません。JSON形式を確認してください。');
   }

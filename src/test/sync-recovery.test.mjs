@@ -283,7 +283,7 @@ test('article save failures withhold publication and session fetch uses the same
 });
 
 test('first-sync failures give the appropriate next step without an unrelated login hint', async t => {
-  for (const [status, nextStep] of [[401, /npm run auth:login/], [403, /アクセス権/], [404, /projectUrl/], [500, /時間を置いて npm run sync/], [429, /次回試行の目安:.*npm run sync/], ['network', /接続を確認して npm run sync/]]) {
+  for (const [status, nextStep] of [[401, /npm run auth:login/], [403, /アクセス権/], [404, /projectUrl/], [500, /時間を置いて npm run sync/], [429, /次回試行の目安:.*\n利用者向けの次の操作:.*npm run sync/], ['network', /接続を確認して npm run sync/]]) {
     const root = fixture(t); const clock = fakeClock(); const messages = [];
     mkdirSync(join(root, '.local/cosense'), {recursive: true});
     writeFileSync(join(root, '.local/cosense/settings.json'), JSON.stringify({users: [{url: 'https://scrapbox.io', token: 'test-only'}]}));

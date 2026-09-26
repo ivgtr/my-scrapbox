@@ -15,7 +15,7 @@ export function openProgress(root, projectUrl, { rebuild = false } = {}) {
   const articles = new Map();
   if (rebuild) {
     try { rmSync(directory, { recursive: true, force: true }); }
-    catch (error) { throw new Error(`途中成果を破棄できません。.local/sync-progress/ の権限を確認して npm run sync -- --rebuild を実行してください。詳細: ${error.message}`); }
+    catch (error) { throw new Error(`途中成果を破棄できません。\n利用者向けの次の操作: .local/sync-progress/ の権限を確認して npm run sync -- --rebuild を実行してください。詳細: ${error.message}`); }
   }
   try {
     if (existsSync(directory)) {
@@ -47,11 +47,11 @@ export function openProgress(root, projectUrl, { rebuild = false } = {}) {
     }
   } catch (error) {
     if (error.code && error.code !== 'ENOENT') {
-      throw new Error(`途中成果を読み取れません。.local/sync-progress/ のファイルと権限を確認して npm run sync で再開してください。詳細: ${error.message}`);
+      throw new Error(`途中成果を読み取れません。\n利用者向けの次の操作: .local/sync-progress/ のファイルと権限を確認して npm run sync で再開してください。詳細: ${error.message}`);
     }
-    throw new Error('途中成果が破損しているか、形式・対象プロジェクトが異なります。npm run sync -- --rebuild で再取得してください。');
+    throw new Error('途中成果が破損しているか、形式・対象プロジェクトが異なります。\n利用者向けの次の操作: npm run sync -- --rebuild で再取得してください。');
   }
-  const saveFailure = error => new Error(`途中成果の保存に失敗しました。.local/ の書き込み権限と空き容量を確認して npm run sync で再開してください。詳細: ${error.message}`);
+  const saveFailure = error => new Error(`途中成果の保存に失敗しました。\n利用者向けの次の操作: .local/ の書き込み権限と空き容量を確認して npm run sync で再開してください。詳細: ${error.message}`);
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     chmodSync(directory, 0o700);

@@ -26,7 +26,7 @@ export function validateArticle(page) {
 }
 export function loadArchive(root, projectUrl) {
   const path = join(root, 'archive/articles.json');
-  if (!existsSync(path)) throw new Error('アーカイブがありません。npm run sync を実行してください。');
+  if (!existsSync(path)) throw new Error('アーカイブがありません。\n利用者向けの次の操作: 記事の取得が必要な場合は npm run sync を実行してください。');
   const text = readFileSync(path, 'utf8');
   try {
     const data = JSON.parse(text);
@@ -36,5 +36,5 @@ export function loadArchive(root, projectUrl) {
       new Set(data.articles.map(p => normalizeTitle(p.title))).size !== data.articles.length ||
       data.contentHash !== hash(JSON.stringify(data.articles))) throw new Error();
     return { data, text, hash: hash(text) };
-  } catch { throw new Error('アーカイブが破損・変更されたか、対象プロジェクトが異なります。直接編集せず npm run sync -- --rebuild で再取得してください。'); }
+  } catch { throw new Error('アーカイブが破損・変更されたか、対象プロジェクトが異なります。\n利用者向けの次の操作: 直接編集せず npm run sync -- --rebuild で再取得してください。'); }
 }

@@ -7,7 +7,7 @@ import { HttpError } from '../integrations/cosense/client.mjs';
 export const systemClock = { now: () => Date.now(), monotonic: () => performance.now(), sleep: ms => setTimeout(ms) };
 const backoffs = [5000, 10000, 20000];
 const waitBudget = 60000;
-const invalidRetryAfter = () => new Error('HTTP 429: Retry-After が不正なため停止しました。次回試行時刻は不明です。連続実行を避け、繰り返す場合はCosense側の応答を確認してください。');
+const invalidRetryAfter = () => new Error('HTTP 429: Retry-After が不正なため停止しました。次回試行時刻は不明です。\n利用者向けの次の操作: 連続実行を避け、繰り返す場合はCosense側の応答を確認してください。');
 
 function retryDelay(value, now) {
   if (value === null) return 0;
@@ -37,12 +37,12 @@ export function controlledGet(root, projectUrl, get, { clock = systemClock, onPr
           state.version !== 1 || state.projectUrl !== projectUrl ||
           !(state.notBefore === null || (typeof state.notBefore === 'string' &&
             Number.isFinite(Date.parse(state.notBefore)) && new Date(state.notBefore).toISOString() === state.notBefore))) throw new Error();
-    } catch { throw new Error('送信待機状態を読み取れません。.local/sync-rate-limit.json の形式・対象プロジェクト・ファイル権限を確認してください。待機時刻を保持して修復する必要があり、--rebuild では復旧できません。'); }
+    } catch { throw new Error('送信待機状態を読み取れません。\n利用者向けの次の操作: .local/sync-rate-limit.json の形式・対象プロジェクト・ファイル権限を確認してください。待機時刻を保持して修復する必要があり、--rebuild では復旧できません。'); }
   }
   let waited = 0;
   let lastStart = -Infinity;
   let queue = Promise.resolve();
-  const stop = reason => new Error(`HTTP 429: ${reason}のため停止しました。次回試行の目安: ${state.notBefore}。この時刻以降に npm run sync で再開してください。制限解除を保証する時刻ではありません。`);
+  const stop = reason => new Error(`HTTP 429: ${reason}のため停止しました。次回試行の目安: ${state.notBefore}。\n利用者向けの次の操作: この時刻以降に npm run sync で再開してください。制限解除を保証する時刻ではありません。`);
   async function cooldown() {
     while (state.notBefore !== null) {
       const remaining = Date.parse(state.notBefore) - clock.now();
@@ -70,7 +70,7 @@ export function controlledGet(root, projectUrl, get, { clock = systemClock, onPr
         const delay = Math.max(backoffs[Math.min(attempt, 2)], retryDelay(error.retryAfter, clock.now()));
         state.notBefore = new Date(clock.now() + delay).toISOString();
         try { atomicWrite(path, JSON.stringify(state)); }
-        catch (cause) { throw new Error(`HTTP 429: 送信待機状態の保存に失敗しました。.local/ の書き込み権限と空き容量を確認し、${state.notBefore} 以降に npm run sync で再開してください。制限解除を保証する時刻ではありません。詳細: ${cause.message}`); }
+        catch (cause) { throw new Error(`HTTP 429: 送信待機状態の保存に失敗しました。\n利用者向けの次の操作: .local/ の書き込み権限と空き容量を確認し、${state.notBefore} 以降に npm run sync で再開してください。制限解除を保証する時刻ではありません。詳細: ${cause.message}`); }
         if (attempt === 3) throw stop('再試行上限3回に達しました');
         onProgress(`HTTP 429: 再試行 ${attempt + 1}/3`);
       }

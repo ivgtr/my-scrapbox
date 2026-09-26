@@ -15,13 +15,13 @@ export function assertPatchedCli(root) {
   try {
     const cliRoot = join(root, 'node_modules/@helpfeel/cosense-cli');
     if (JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8')).version !== cliVersion) {
-      throw new Error('Cosense CLIのバージョンが変更されています。保存先パッチの互換性を確認してください。');
+      throw new Error('Cosense CLIのバージョンが変更されています。\n利用者向けの次の操作: 保存先パッチの互換性を確認してください。');
     }
     if (!readFileSync(join(cliRoot, 'src/lib/settings.ts'), 'utf8').includes(settingsDeclaration)) {
-      throw new Error('現行の保存先パッチが未適用です。npm ci を実行してください。');
+      throw new Error('現行の保存先パッチが未適用です。\n利用者向けの次の操作: npm ci を実行してください。');
     }
   } catch (error) {
-    if (error.code === 'ENOENT') throw new Error('npm ci を実行してください。');
+    if (error.code === 'ENOENT') throw new Error('Cosense CLIまたは保存先パッチが見つかりません。\n利用者向けの次の操作: npm ci を実行してください。');
     throw error;
   }
 }
@@ -44,7 +44,7 @@ export function credentialHeaders(root, projectUrl) {
       }
     }
   } catch {
-    throw new Error('認証設定を読み取れません。本人が別ターミナルで npm run auth:login を実行し、設定を確認してください。');
+    throw new Error('認証設定を読み取れません。\n利用者向けの次の操作: 本人が別ターミナルで npm run auth:login を実行し、設定を確認してください。');
   }
   const configured = new URL(projectUrl);
   const projectName = configured.pathname.split('/').filter(Boolean)[0].toLowerCase();
@@ -55,5 +55,5 @@ export function credentialHeaders(root, projectUrl) {
   if (project) return { 'x-service-account-access-key': project.serviceAccount };
   const user = (settings.users ?? []).find(entry => new URL(entry.url).origin === configured.origin);
   if (user) return { 'x-personal-access-token': user.token };
-  throw new Error('未認証です。本人が別ターミナルで npm run auth:login を実行してください。');
+  throw new Error('未認証です。\n利用者向けの次の操作: 本人が別ターミナルで npm run auth:login を実行してください。');
 }

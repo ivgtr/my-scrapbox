@@ -5,10 +5,10 @@ import { validateProjectUrl } from './config.mjs';
 
 export function initWorkspace(root, projectUrl) {
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  if (!projectUrl) throw new Error('npm run workspace:init -- https://scrapbox.io/プロジェクト名 を実行してください。');
+  if (!projectUrl) throw new Error('プロジェクトURLが未指定です。\n利用者向けの次の操作: 初期化を依頼する場合は workspace-setup に https://scrapbox.io/プロジェクト名 を指定してください。');
   projectUrl = validateProjectUrl(projectUrl);
-  if (git(['branch', '--show-current']) !== 'main') throw new Error('main ブランチから初期化してください。');
-  if (git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('変更のない作業ツリーから初期化してください。');
+  if (git(['branch', '--show-current']) !== 'main') throw new Error('現在のブランチは main ではないため初期化できません。\n利用者向けの次の操作: 初回セットアップの条件をREADMEで確認してください。既存workspaceを再初期化する必要はありません。');
+  if (git(['status', '--porcelain', '--untracked-files=all'])) throw new Error('作業ツリーに変更があります。初期化には変更のない main が必要です。\n利用者向けの次の操作: Git状態を確認してください。');
   if (git(['branch', '--list', 'workspace'])) throw new Error('workspace ブランチが既に存在します。上書きしません。');
   for (const name of ['cosense.config.json', 'memory', 'archive']) {
     if (existsSync(join(root, name))) throw new Error(`${name} が既に存在します。上書きしません。`);
@@ -35,6 +35,6 @@ export function initWorkspace(root, projectUrl) {
 export function requireWorkspace(root) {
   let branch;
   try { branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim(); }
-  catch { throw new Error('Gitリポジトリの workspace ブランチで実行してください。'); }
-  if (branch !== 'workspace') throw new Error('同期は workspace ブランチでのみ実行できます。npm run workspace:init -- <projectUrl> を実行してください。');
+  catch { throw new Error('Gitブランチを確認できません。\n利用者向けの次の操作: Gitリポジトリと workspace ブランチを確認してください。'); }
+  if (branch !== 'workspace') throw new Error('同期は workspace ブランチでのみ実行できます。\n利用者向けの次の操作: 既存workspaceがあればその作業場所・ブランチを確認してください。未初期化でセットアップを希望する場合だけ、READMEの workspace-setup を明示呼び出ししてください。');
 }
