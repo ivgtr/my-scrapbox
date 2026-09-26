@@ -14,6 +14,7 @@
     "memory": "node src/cli/local.mjs memory",
     "session:start": "node src/cli/local.mjs session:start",
     "test": "node --test",
+    "workspace:update": "node src/cli/local.mjs workspace:update",
     "workspace:init": "node src/cli/local.mjs workspace:init",
     "sync": "node src/cli/local.mjs sync",
     "search": "node src/cli/local.mjs search",

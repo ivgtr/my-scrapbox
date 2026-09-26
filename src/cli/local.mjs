@@ -5,6 +5,7 @@ import { readConfig } from '../lib/config.mjs';
 import { loadArchive, normalizeTitle, pageUrl } from '../lib/archive.mjs';
 import { syncArchive } from '../lib/sync.mjs';
 import { rebuildIndex, openIndex, search, links } from '../lib/search-index.mjs';
+import { updateWorkspace } from '../lib/workspace-update.mjs';
 import { initWorkspace } from '../lib/workspace.mjs';
 import { archiveStatus, startSession } from '../lib/session.mjs';
 
@@ -17,6 +18,10 @@ const commands = {
   'workspace:init': {
     arguments: 'title',
     run: async args => console.log(`workspace を初期化しました: ${initWorkspace(root, args[0])}\n本人がログイン後、npm run sync を実行してください。`)
+  },
+  'workspace:update': {
+    arguments: 'none',
+    run: async () => updateWorkspace(root)
   },
   memory: {
     arguments: 'none',

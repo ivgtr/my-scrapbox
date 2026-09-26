@@ -66,7 +66,19 @@ Agentは完了時に決定・理由・未完了事項・次の操作を記憶へ
 
 **公開先へworkspaceをpushすると、記事・記憶・設定も公開されます。**
 
-`main` はテンプレート専用です。更新は `workspace` で `git merge main` などにより取り込み、個人データをmainへマージしないでください。
+`main` はテンプレート専用です。独立clone・共有worktreeとも、`workspace` で更新します。
+
+```sh
+npm run workspace:update
+```
+
+既定では登録済みの `origin` の `main` を取得し、取得したコミットへworkspaceをrebaseします。fork元に追従する場合は、登録済みリモートを `git config --local cosense.templateRemote upstream` で指定してください。未登録の取得先には代替せず停止します。ローカルmainは変更しません。設定・Cosense認証・記事アーカイブは不要です。
+
+未コミット・未追跡・ステージ済みの変更は更新用stashで退避し、成功後に復元します。Git管理外の `.local/` と既存stashは保持します。個人コミットのIDはrebaseで変わります。個人データをmainへマージしないでください。
+
+競合時は通知の `git rebase --continue`・`git rebase --abort` と、ID付きのstash復元手順に従ってください。stash復元の競合ではrebaseは完了しており、自動再適用・削除は行いません。復元を確認して更新用stashを削除するまで、次の更新は停止します。同期・Git操作中も更新できません。
+
+更新前と復元後で依存定義が変わった場合だけ `npm ci` を案内します。インストール・記事同期・pushは自動実行しません。既存cloneへの初回導入は、この機能を含むmainが取得可能になってから行ってください。
 
 ## 困ったとき
 
