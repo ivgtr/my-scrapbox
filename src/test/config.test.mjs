@@ -27,7 +27,7 @@ test('personal project resolves and legacy memoryTitle is ignored', t => {
   f.write({ projectUrl: 'https://scrapbox.io/example/', memoryTitle: '記憶 & Decisions' });
   const config = readConfig(f.root);
   assert.equal(config.projectUrl, 'https://scrapbox.io/example');
-  assert.deepEqual(config, { projectUrl: 'https://scrapbox.io/example' });
+  assert.deepEqual(config, { projectUrl: 'https://scrapbox.io/example', syncMode: 'none' });
   assert.deepEqual(resolveArgs(['listPages', '@project'], f.root), ['listPages', config.projectUrl]);
   assert.throws(() => resolveArgs(['browsePage', '@memory'], f.root), /廃止/);
 });
@@ -70,5 +70,18 @@ test('a fork launcher uses its own configuration and credentials from any workin
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), { args: expected,
       settings: join(f.dir, '.local/cosense/settings.json'), hasPat: false });
+  }
+});
+
+
+test('syncMode defaults to none and rejects invalid values', t => {
+  const f = fixture(t);
+  for (const syncMode of ['none', 'fetch', 'commit']) {
+    f.write({ projectUrl: 'https://scrapbox.io/example', syncMode });
+    assert.equal(readConfig(f.root).syncMode, syncMode);
+  }
+  for (const syncMode of [null, '', false, 1, [], {}, 'push', 'FETCH']) {
+    f.write({ projectUrl: 'https://scrapbox.io/example', syncMode });
+    assert.throws(() => readConfig(f.root), /syncMode/);
   }
 });

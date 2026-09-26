@@ -66,8 +66,13 @@ export async function syncArchive(root, projectUrl, { rebuild = false, get, limi
         const changed = !previous || JSON.stringify(previous.articles) !== JSON.stringify(articles);
         const checkedAt = now();
         if (changed) atomicWrite(path, `${JSON.stringify({ version: 1, projectUrl, syncedAt: checkedAt, contentHash: hash(JSON.stringify(articles)), articles }, null, 2)}\n`, 0o444);
-        chmodSync(path, 0o444);
-        atomicWrite(join(root, '.local/sync.json'), JSON.stringify({ projectUrl, checkedAt }));
+        try {
+          chmodSync(path, 0o444);
+          atomicWrite(join(root, '.local/sync.json'), JSON.stringify({ projectUrl, checkedAt }));
+        } catch (error) {
+          error.syncResult = { changed, count: articles.length };
+          throw error;
+        }
         return { changed, count: articles.length };
       } catch (error) {
         if (!(error instanceof SnapshotChanged)) throw error;

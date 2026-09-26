@@ -9,6 +9,7 @@ import { syncArchive } from '../lib/sync.mjs';
 import { authenticatedGet } from '../integrations/cosense/client.mjs';
 import { loadArchive } from '../lib/archive.mjs';
 import { openIndex, indexState, rebuildIndex, search, links } from '../lib/search-index.mjs';
+import { startSession, commitArchive } from '../lib/session.mjs';
 
 const projectUrl = 'https://scrapbox.io/example';
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -162,7 +163,7 @@ test('offline CLI works with no credentials and no network; memory and personal 
   const root = fixture(t);
   await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
   writeFileSync(join(root, 'deny-network.mjs'), 'globalThis.fetch = () => { throw new Error("Network forbidden"); };');
-  for (const [cmd, ...args] of [['search', '日本語'], ['read', 'Alpha'], ['links', '本文なし'], ['status'], ['memory'], ['index:rebuild']]) {
+  for (const [cmd, ...args] of [['search', '日本語'], ['read', 'Alpha'], ['links', '本文なし'], ['status'], ['memory'], ['index:rebuild'], ['session:start']]) {
     const result = spawnSync(process.execPath, ['--import', join(root, 'deny-network.mjs'), join(root, 'src/cli/local.mjs'), cmd, ...args], { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, COSENSE_PAT: 'ignored-test-only' } });
     assert.equal(result.status, 0, `${cmd}: ${result.stderr}`);
   }
@@ -293,4 +294,163 @@ test('malformed authentication settings never fall back to a valid PAT', t => {
     writeFileSync(join(root, '.local/cosense/settings.json'), JSON.stringify(settings));
     assert.throws(() => authenticatedGet(root, projectUrl), /認証設定を読み取れません/);
   }
+});
+
+const session = (root, mode, options = {}) => {
+  const messages = [];
+  return startSession(root, { projectUrl, syncMode: mode }, { print: text => messages.push(text), ...options })
+    .then(ok => ({ ok, output: messages.join('\n') }));
+};
+
+test('session none is offline with no archive; fetch creates and incrementally refreshes articles without commits', async t => {
+  const root = fixture(t);
+  const head = git(root, 'rev-parse', 'HEAD');
+  const forbidden = async () => { throw new Error('network forbidden'); };
+  let result = await session(root, 'none', { get: forbidden });
+  assert.equal(result.ok, true); assert.match(result.output, /未取得/);
+  assert.equal(existsSync(archivePath(root)), false);
+  const pages = [page('a', 'Alpha')];
+  let remote = server(pages);
+  result = await session(root, 'fetch', { get: remote.get });
+  assert.equal(result.ok, true); assert.match(result.output, /記事同期成功/);
+  assert.equal(indexState(root, loadArchive(root, projectUrl)), 'ready');
+  const text = readFileSync(archivePath(root), 'utf8');
+  remote = server(pages);
+  result = await session(root, 'fetch', { get: remote.get });
+  assert.equal(result.ok, true); assert.match(result.output, /変更なし/);
+  assert.equal(remote.calls.filter(url => url.includes('/v2/')).length, 0);
+  assert.equal(readFileSync(archivePath(root), 'utf8'), text);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  result = await session(root, 'none', { get: forbidden });
+  assert.equal(result.ok, true); assert.match(result.output, /syncedAt/); assert.match(result.output, /checkedAt/);
+});
+
+test('session commit saves only archive, preserves other staging, and commits previous fetch without remote changes', async t => {
+  const root = fixture(t);
+  // A push would fail against this deliberately unavailable destination.
+  git(root, 'remote', 'add', 'origin', join(root, 'unavailable-remote'));
+  const pages = [page('a', 'Alpha')];
+  git(root, 'add', 'cosense.config.json', 'memory');
+  writeFileSync(join(root, 'other.txt'), 'staged'); git(root, 'add', 'other.txt');
+  writeFileSync(join(root, 'other.txt'), 'unstaged');
+  const staged = git(root, 'diff', '--cached', '--binary');
+  let result = await session(root, 'commit', { get: server(pages).get });
+  assert.equal(result.ok, true);
+  assert.equal(git(root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), 'archive/articles.json');
+  assert.equal(git(root, 'diff', '--cached', '--binary'), staged);
+  assert.equal(readFileSync(join(root, 'other.txt'), 'utf8'), 'unstaged');
+  const head = git(root, 'rev-parse', 'HEAD');
+  result = await session(root, 'commit', { get: server(pages).get });
+  assert.equal(result.ok, true); assert.match(result.output, /commit不要/);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  pages[0] = page('a', 'Alpha', 'changed', 2);
+  await session(root, 'fetch', { get: server(pages).get });
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  const remote = server(pages);
+  result = await session(root, 'commit', { get: remote.get });
+  assert.equal(result.ok, true); assert.match(result.output, /変更なし/);
+  assert.match(result.output, /commitしました/);
+  assert.equal(remote.calls.filter(url => url.includes('/v2/')).length, 0);
+  assert.notEqual(git(root, 'rev-parse', 'HEAD'), head);
+  assert.equal(git(root, 'diff', '--cached', '--binary'), staged);
+});
+
+test('session fetch failures retain articles and dates; corruption stops network and commit in every mode', async t => {
+  const root = fixture(t);
+  let result = await session(root, 'fetch', { get: async () => { throw new Error('HTTP 401'); } });
+  assert.equal(result.ok, false); assert.match(result.output, /未取得/);
+  await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
+  const archive = loadArchive(root, projectUrl);
+  const head = git(root, 'rev-parse', 'HEAD');
+  for (const reason of ['network', 'HTTP 401', 'HTTP 403']) {
+    result = await session(root, 'commit', { get: async () => { throw new Error(reason); } });
+    assert.equal(result.ok, false); assert.match(result.output, /同期失敗/);
+    assert.ok(result.output.includes(archive.data.syncedAt));
+    assert.match(result.output, /ローカルで参照できます/);
+    assert.equal(readFileSync(archivePath(root), 'utf8'), archive.text);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  }
+  const { chmodSync } = await import('node:fs'); chmodSync(archivePath(root), 0o644);
+  writeFileSync(archivePath(root), '{broken');
+  for (const mode of ['none', 'fetch', 'commit']) {
+    let called = false;
+    result = await session(root, mode, { get: async () => { called = true; } });
+    assert.equal(result.ok, false); assert.equal(called, false);
+    assert.match(result.output, /sync -- --rebuild/); assert.match(result.output, /停止/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  }
+});
+
+test('index and metadata failures report successful articles; commit hooks are respected and failed staging is reported', async t => {
+  const root = fixture(t);
+  const pages = [page('a', 'Alpha')];
+  let result = await session(root, 'commit', { get: server(pages).get, buildIndex: () => { throw new Error('index test failure'); } });
+  assert.equal(result.ok, false); assert.match(result.output, /索引生成失敗/);
+  assert.match(result.output, /commitしました/); loadArchive(root, projectUrl);
+  const head = git(root, 'rev-parse', 'HEAD');
+  pages[0] = page('a', 'Alpha', 'changed', 2);
+  writeFileSync(join(root, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  result = await session(root, 'commit', { get: server(pages).get });
+  assert.equal(result.ok, false); assert.match(result.output, /commitに失敗/);
+  assert.match(result.output, /commit失敗後のGit状態/); assert.match(result.output, /M {2}archive\/articles.json/);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  assert.equal(loadArchive(root, projectUrl).data.articles[0].updated, 2);
+  rmSync(join(root, '.local/sync.json')); mkdirSync(join(root, '.local/sync.json'));
+  pages[0] = page('a', 'Alpha', 'again', 3);
+  result = await session(root, 'fetch', { get: server(pages).get });
+  assert.equal(result.ok, false); assert.match(result.output, /同期状態の保存に失敗/);
+  assert.equal(loadArchive(root, projectUrl).data.articles[0].updated, 3);
+  assert.ok(result.output.includes(loadArchive(root, projectUrl).data.syncedAt));
+  assert.match(result.output, /ローカルで参照できます/);
+});
+
+test('missing Git identity reports a commit failure without rolling back fetched articles', async t => {
+  const root = fixture(t);
+  // Empty local identity overrides any global developer identity.
+  git(root, 'config', 'user.name', ''); git(root, 'config', 'user.email', '');
+  const head = git(root, 'rev-parse', 'HEAD');
+  const result = await session(root, 'commit', { get: server([page('a', 'Alpha')]).get });
+  assert.equal(result.ok, false); assert.match(result.output, /commitに失敗/);
+  assert.match(result.output, /commit失敗後のGit状態/);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  assert.equal(loadArchive(root, projectUrl).data.articles.length, 1);
+});
+
+test('commit rejects non-workspace branches both initially and after fetch', async t => {
+  const root = fixture(t);
+  await syncArchive(root, projectUrl, { get: server([page('a', 'Alpha')]).get });
+  git(root, 'switch', '-c', 'other');
+  assert.throws(() => commitArchive(root, projectUrl), /workspace/);
+  git(root, 'switch', 'workspace');
+  const remote = server([page('a', 'Alpha')]);
+  let calls = 0;
+  const result = await session(root, 'commit', { get: async url => {
+    const response = await remote.get(url);
+    if (++calls === 2) git(root, 'switch', 'other');
+    return response;
+  } });
+  assert.equal(result.ok, false); assert.match(result.output, /commitに失敗/);
+  assert.equal(git(root, 'log', '--format=%s', '-1'), 'Template');
+});
+
+test('CLI rejects invalid modes before networking; manual sync ignores commit mode', t => {
+  const root = fixture(t);
+  const config = value => writeFileSync(join(root, 'cosense.config.json'), JSON.stringify({ projectUrl, syncMode: value }));
+  writeFileSync(join(root, 'mock-network.mjs'), `globalThis.fetch = async (url, init) => {
+    if (init.method !== 'GET') throw new Error('Only GET allowed');
+    return { ok: true, json: async () => ({ count: 0, skip: 0, limit: 1000, pages: [] }) };
+  };`);
+  const run = command => spawnSync(process.execPath, ['--import', join(root, 'mock-network.mjs'), join(root, 'src/cli/local.mjs'), command], { encoding: 'utf8' });
+  config('invalid');
+  assert.match(run('session:start').stderr, /syncMode/);
+  assert.equal(existsSync(archivePath(root)), false);
+  mkdirSync(join(root, '.local/cosense'), { recursive: true });
+  writeFileSync(join(root, '.local/cosense/settings.json'), JSON.stringify({ users: [{ url: 'https://scrapbox.io', token: 'test-only' }] }));
+  config('commit');
+  const head = git(root, 'rev-parse', 'HEAD');
+  let result = run('sync'); assert.equal(result.status, 0, result.stderr);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head);
+  result = run('session:start'); assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.notEqual(git(root, 'rev-parse', 'HEAD'), head);
+  assert.equal(git(root, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), 'archive/articles.json');
 });

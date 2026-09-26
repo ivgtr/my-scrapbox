@@ -13,7 +13,11 @@ export function readConfig(root) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     throw new Error('cosense.config.json はオブジェクトで指定してください。');
   }
-  return { projectUrl: validateProjectUrl(config.projectUrl) };
+  const syncMode = config.syncMode === undefined ? 'none' : config.syncMode;
+  if (!['none', 'fetch', 'commit'].includes(syncMode)) {
+    throw new Error('syncMode は none、fetch、commit のいずれかを指定してください。');
+  }
+  return { projectUrl: validateProjectUrl(config.projectUrl), syncMode };
 }
 
 export function validateProjectUrl(projectUrl) {

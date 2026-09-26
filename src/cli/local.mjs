@@ -4,11 +4,16 @@ import { root, rootUrl } from '../paths.mjs';
 import { readConfig } from '../lib/config.mjs';
 import { loadArchive, normalizeTitle, pageUrl } from '../lib/archive.mjs';
 import { syncArchive } from '../lib/sync.mjs';
-import { rebuildIndex, openIndex, search, links, indexState } from '../lib/search-index.mjs';
+import { rebuildIndex, openIndex, search, links } from '../lib/search-index.mjs';
 import { initWorkspace } from '../lib/workspace.mjs';
+import { archiveStatus, startSession } from '../lib/session.mjs';
 
 const printJson = value => console.log(JSON.stringify(value, null, 2));
 const commands = {
+  'session:start': {
+    arguments: 'none', project: true,
+    run: async (_, config) => { if (!await startSession(root, config)) process.exitCode = 1; }
+  },
   'workspace:init': {
     arguments: 'title',
     run: async args => console.log(`workspace を初期化しました: ${initWorkspace(root, args[0])}\n本人がログイン後、npm run sync を実行してください。`)
@@ -35,15 +40,7 @@ const commands = {
   status: {
     arguments: 'none', project: true, archive: true,
     run: async (_, { projectUrl, archive }) => {
-      let checkedAt = archive.data.syncedAt;
-      try {
-        const state = JSON.parse(readFileSync(join(root, '.local/sync.json'), 'utf8'));
-        if (state?.projectUrl === projectUrl && Number.isFinite(Date.parse(state.checkedAt))) checkedAt = state.checkedAt;
-      } catch (error) {
-        // Optional local metadata is not the archive's source of truth.
-        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
-      }
-      printJson({ projectUrl, syncedAt: archive.data.syncedAt, checkedAt, count: archive.data.articles.length, index: indexState(root, archive) });
+      printJson(archiveStatus(root, projectUrl, archive));
     }
   },
   'index:rebuild': {

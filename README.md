@@ -25,13 +25,23 @@ PATはCLIの案内に従ってターミナルへ入力してください。チ�
 
 ## 普段の流れ
 
-セッションの最初に、Agentは記憶と同期状態を確認し、初回の参照前に同期を案内します。同期は自動実行しません。
+セッションの最初に、Agentは `session:start` で記憶と同期状態を確認します。`cosense.config.json` の `syncMode` に応じ、この入口だけで同期・記事のcommitを実行します。
 
 ```sh
-npm run memory
-npm run status
-npm run sync
+npm run session:start
 ```
+
+`syncMode` は未指定なら `none` です。不正な値は実行前に拒否します。
+
+| 値 | セッション開始時の動作 |
+| --- | --- |
+| `none` | オフラインで記憶・同期状態を表示し、同期を案内する |
+| `fetch` | 差分を確認して記事・索引を更新する |
+| `commit` | fetchに加えて `archive/articles.json` だけをcommitする |
+
+例: `cosense.config.json` に `"syncMode": "fetch"` を設定します。`session:start` は記憶の入口、各段階の結果、記事の取得日時（`syncedAt`）と最後の差分確認日時（`checkedAt`）を表示します。検索・参照はどのモードでもオフラインです。常駐処理・定期実行・自動pushはありません。
+
+手動の `npm run sync` は設定に関係なく取得・更新だけを行います。`npm run memory` と `npm run status` も個別に実行できます。
 
 `status` はローカルの件数・同期日時・索引状態を表示します。Scrapboxとの差分確認と反映は `sync` が行います。初回は全件を取得し、以降は追加・更新・タイトル変更・削除を反映します。差分の確認にはネットワーク接続と認証が必要です。
 
@@ -52,12 +62,14 @@ Agentは作業完了時に、合意した方針・決定と理由・未完了事
 
 | 保存先 | 内容 | workspaceでのGit管理 |
 | --- | --- | --- |
-| `cosense.config.json` | 対象の `projectUrl` | 対象 |
+| `cosense.config.json` | 対象の `projectUrl` と `syncMode` | 対象 |
 | `archive/articles.json` | Scrapboxから取得した記事 | 対象 |
 | `memory/index.md` と詳細Markdown | Agent記憶の正本 | 対象 |
 | `.local/` | 認証情報・索引・同期状態・ログ | 除外 |
 
-内容を確認して保存します。自動commit・pushは行いません。
+`commit` モード選択時だけ、同期成功後の記事アーカイブを自動commitします。Scrapbox側に変更がなくても、前回取得分が未コミットなら保存します。HEADと一致していればcommitしません。workspaceブランチをcommit直前にも確認し、アーカイブをステージして `git commit --only` で対象を限定します。他のステージ内容は保持します。Gitの本人設定やフックは変更・迂回しません。pushは自動実行しません。
+
+設定・記憶などは内容を確認して手動で保存します。
 
 ```sh
 git add cosense.config.json archive/articles.json memory
@@ -71,8 +83,9 @@ git commit -m "Save local knowledge and memory"
 ## 困ったとき
 
 - アーカイブがない場合は、ログイン後に `npm run sync` を実行します。同期はworkspaceでのみ実行できます。
-- 同期が失敗した場合は既存の記事を保持します。記事の編集が成功して同期だけ失敗した場合は、同期だけを再実行します。
+- 通信・認証エラーでは既存の記事を保持し、取得時点を表示して参照を続けられます。初回取得前なら同期を案内します。記事の編集が成功して同期だけ失敗した場合は、同期だけを再実行します。
 - アーカイブが破損した場合は `npm run sync -- --rebuild` で全件を再取得します。記事ファイルは読み取り専用とし、内容ハッシュで変更を検出します。Gitのcheckout後は、次の同期成功時に読み取り専用へ戻します。
+- 索引生成やcommitだけの失敗は、記事取得の成功と区別して表示します。記事は巻き戻さず、commit失敗時はGit状態も表示します。失敗時の `session:start` は終了コード1を返します。
 - 索引は検索時に必要に応じて再生成します。手動で作り直す場合は `npm run index:rebuild` を使います。
 - 異常終了で同期ロックが残った場合は、同期が実行中でないことを確認して `.local/sync.lock` を削除します。
 

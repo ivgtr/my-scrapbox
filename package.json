@@ -12,6 +12,7 @@
     "auth:check": "node src/cli/cosense.mjs whoami https://scrapbox.io",
     "pages": "node src/cli/cosense.mjs listPages @project",
     "memory": "node src/cli/local.mjs memory",
+    "session:start": "node src/cli/local.mjs session:start",
     "test": "node --test",
     "workspace:init": "node src/cli/local.mjs workspace:init",
     "sync": "node src/cli/local.mjs sync",
