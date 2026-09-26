@@ -2,15 +2,24 @@
   "name": "my-scrapbox",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "postinstall": "node scripts/patch-cosense.mjs",
-    "cosense": "node scripts/cosense.mjs",
-    "auth:login": "node scripts/cosense.mjs login https://scrapbox.io",
-    "auth:check": "node scripts/cosense.mjs whoami https://scrapbox.io",
-    "pages": "node scripts/cosense.mjs listPages @project",
-    "memory": "node scripts/cosense.mjs browsePage @memory",
-    "test": "node --test"
+    "postinstall": "node src/integrations/cosense/patch.mjs",
+    "cosense": "node src/cli/cosense.mjs",
+    "auth:login": "node src/cli/cosense.mjs login https://scrapbox.io",
+    "auth:check": "node src/cli/cosense.mjs whoami https://scrapbox.io",
+    "pages": "node src/cli/cosense.mjs listPages @project",
+    "memory": "node src/cli/local.mjs memory",
+    "test": "node --test",
+    "workspace:init": "node src/cli/local.mjs workspace:init",
+    "sync": "node src/cli/local.mjs sync",
+    "search": "node src/cli/local.mjs search",
+    "read": "node src/cli/local.mjs read",
+    "links": "node src/cli/local.mjs links",
+    "status": "node src/cli/local.mjs status",
+    "index:rebuild": "node src/cli/local.mjs index:rebuild"
   },
   "dependencies": {
     "@helpfeel/cosense-cli": "1.15.0"

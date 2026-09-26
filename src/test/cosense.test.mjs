@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
-const settingsUrl = new URL('../node_modules/@helpfeel/cosense-cli/src/lib/settings.ts', import.meta.url).href;
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const settingsUrl = new URL('../../node_modules/@helpfeel/cosense-cli/src/lib/settings.ts', import.meta.url).href;
 const run = (args, env = {}) => spawnSync(process.execPath, args, {
   cwd: root, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 15000
 });
@@ -40,7 +40,7 @@ test('official settings code stores and resolves repository-compatible credentia
 });
 
 test('launcher forces the local settings path and forwards arguments from another directory', () => {
-  const launcher = join(root, 'scripts/cosense.mjs');
+  const launcher = join(root, 'src/cli/cosense.mjs');
   const result = spawnSync(process.execPath, [launcher, 'login', '--help'], {
     cwd: tmpdir(), encoding: 'utf8', timeout: 15000,
     env: { ...process.env, COSENSE_SETTINGS_PATH: '/invalid/parent/settings.json' }
@@ -59,7 +59,7 @@ test('launcher isolates inherited PAT and does not authenticate without local cr
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  const result = run(['scripts/cosense.mjs', 'whoami', 'https://scrapbox.io'], {
+  const result = run(['src/cli/cosense.mjs', 'whoami', 'https://scrapbox.io'], {
     COSENSE_PAT: 'test-only-parent-token',
     COSENSE_SETTINGS_PATH: '/invalid/parent/settings.json'
   });
@@ -73,7 +73,31 @@ test('install patch is idempotent', () => {
     path => join(root, 'node_modules/@helpfeel/cosense-cli/src', path)
   );
   const before = files.map(path => readFileSync(path, 'utf8'));
-  const result = run(['scripts/patch-cosense.mjs']);
+  const result = run(['src/integrations/cosense/patch.mjs']);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(files.map(path => readFileSync(path, 'utf8')), before);
+});
+
+test('compatibility patch validates all files before writing and refuses other versions', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cosense-patch-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const cli = join(dir, 'node_modules/@helpfeel/cosense-cli');
+  cpSync(new URL('../', import.meta.url), join(dir, 'src'), { recursive: true });
+  mkdirSync(join(cli, 'src/lib'), { recursive: true });
+  mkdirSync(join(cli, 'src/commands'), { recursive: true });
+  writeFileSync(join(cli, 'package.json'), JSON.stringify({ version: '1.15.0' }));
+  const settings = join(cli, 'src/lib/settings.ts');
+  const original = "const SETTINGS_PATH = join(homedir(), '.cosense', 'settings.json');";
+  writeFileSync(settings, original);
+  writeFileSync(join(cli, 'src/commands/login.ts'), 'unexpected upstream source');
+  const invoke = () => spawnSync(process.execPath, [join(dir, 'src/integrations/cosense/patch.mjs')], { encoding: 'utf8' });
+  let result = invoke();
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /login.ts changed/);
+  assert.equal(readFileSync(settings, 'utf8'), original);
+  writeFileSync(join(cli, 'package.json'), JSON.stringify({ version: '9.0.0' }));
+  result = invoke();
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /version changed/);
+  assert.equal(readFileSync(settings, 'utf8'), original);
 });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { readConfig, resolveArgs } from '../scripts/config.mjs';
+import { readConfig, resolveArgs } from '../lib/config.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'cosense-template-test-'));
@@ -22,13 +22,14 @@ test('unset personal configuration permits help but blocks project shortcuts', t
     ['readPage', 'https://scrapbox.io/example/page']);
 });
 
-test('personal project and memory titles resolve to canonical URLs', t => {
+test('personal project resolves and legacy memoryTitle is ignored', t => {
   const f = fixture(t);
   f.write({ projectUrl: 'https://scrapbox.io/example/', memoryTitle: '記憶 & Decisions' });
   const config = readConfig(f.root);
   assert.equal(config.projectUrl, 'https://scrapbox.io/example');
-  assert.equal(config.memoryUrl, 'https://scrapbox.io/example/' + encodeURIComponent('記憶_&_Decisions'));
-  assert.deepEqual(resolveArgs(['browsePage', '@memory'], f.root), ['browsePage', config.memoryUrl]);
+  assert.deepEqual(config, { projectUrl: 'https://scrapbox.io/example' });
+  assert.deepEqual(resolveArgs(['listPages', '@project'], f.root), ['listPages', config.projectUrl]);
+  assert.throws(() => resolveArgs(['browsePage', '@memory'], f.root), /廃止/);
 });
 
 test('invalid configuration fails before the CLI can contact an account', t => {
@@ -40,29 +41,29 @@ test('invalid configuration fails before the CLI can contact an account', t => {
     assert.throws(() => readConfig(f.root), /projectUrl/);
   }
   f.write({ projectUrl: 'https://scrapbox.io/example', memoryTitle: ' ' });
-  assert.throws(() => readConfig(f.root), /memoryTitle/);
+  assert.equal(readConfig(f.root).projectUrl, 'https://scrapbox.io/example');
   writeFileSync(join(f.dir, 'cosense.config.json'), '{');
   assert.throws(() => readConfig(f.root), /JSON/);
 });
 
 test('a fork launcher uses its own configuration and credentials from any working directory', t => {
   const f = fixture(t);
-  cpSync(new URL('../scripts', import.meta.url), join(f.dir, 'scripts'), { recursive: true });
+  cpSync(new URL('../', import.meta.url), join(f.dir, 'src'), { recursive: true });
   writeFileSync(join(f.dir, 'package.json'), '{"type":"module"}');
   f.write({ projectUrl: 'https://scrapbox.io/example', memoryTitle: 'Agent Memory' });
   const cli = join(f.dir, 'node_modules/@helpfeel/cosense-cli');
   mkdirSync(join(cli, 'src/lib'), { recursive: true });
   mkdirSync(join(cli, 'bin'), { recursive: true });
-  writeFileSync(join(cli, 'src/lib/settings.ts'), 'process.env.COSENSE_SETTINGS_PATH ||');
+  writeFileSync(join(cli, 'package.json'), JSON.stringify({ version: '1.15.0' }));
+  writeFileSync(join(cli, 'src/lib/settings.ts'), "const SETTINGS_PATH = process.env.COSENSE_SETTINGS_PATH || join(homedir(), '.cosense', 'settings.json');");
   writeFileSync(join(cli, 'bin/cosense'), `
     console.log(JSON.stringify({ args: process.argv.slice(2),
       settings: process.env.COSENSE_SETTINGS_PATH, hasPat: 'COSENSE_PAT' in process.env }));
   `);
   for (const [args, expected] of [
-    [['listPages', '@project', '--limit', '1'], ['listPages', 'https://scrapbox.io/example', '--limit', '1']],
-    [['browsePage', '@memory'], ['browsePage', 'https://scrapbox.io/example/Agent_Memory']]
+    [['listPages', '@project', '--limit', '1'], ['listPages', 'https://scrapbox.io/example', '--limit', '1']]
   ]) {
-    const result = spawnSync(process.execPath, [join(f.dir, 'scripts/cosense.mjs'), ...args], {
+    const result = spawnSync(process.execPath, [join(f.dir, 'src/cli/cosense.mjs'), ...args], {
       cwd: tmpdir(), encoding: 'utf8', timeout: 10000,
       env: { ...process.env, COSENSE_PAT: 'test-only-parent-token', COSENSE_SETTINGS_PATH: '/invalid' }
     });
