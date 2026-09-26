@@ -1,0 +1,50 @@
+[
+  {
+    "id": "answer-attribution", "task": "answer", "origin": "synthetic",
+    "request": "保存してある記事から、私が自動化に賛成していると言える？",
+    "raw": [{"speaker":"引用された外部著者","targetTime":"2024年","text":"全ての判断を自動化すべきだ。保存者のコメントはない。"}],
+    "understanding": [{"basis":"observation","confirmation":"unconfirmed","scope":"引用の保存のみ","text":"記事の保存は保存者の賛同を示す証拠ではない。","sources":[0]}],
+    "must": ["保存と賛同を区別する", "原文の発言者を識別する", "現在の意向が不明であることを示す"],
+    "avoid": ["個人の意向を断定する", "引用を本人の発言へ変える"]
+  },
+  {
+    "id": "ideas-transfer", "task": "ideas", "origin": "synthetic",
+    "request": "在庫確認の漏れを減らす案を考えたい。今は時間をかけず小さく試したい。第一候補まで示して。",
+    "raw": [{"speaker":"user","targetTime":"過去の別業務","text":"通知処理は動いたが、必要な人が読めず目的を達成できなかった。"}],
+    "understanding": [{"basis":"inference","confirmation":"unconfirmed","scope":"手段の稼働と利用者の成果を分けて検証する場面。新業務への適用は未確認。","text":"処理の稼働だけでなく、必要な人が確認できることを成功条件にする。","sources":[0]}],
+    "must": ["現在の小さく試す条件に沿った第一候補を出す", "通知の稼働と確認漏れ減少を別の成功条件にする", "別業務からの類推であることを区別する"],
+    "avoid": ["今回も同じ失敗をしていると断定する", "大規模開発を当然の第一候補とする"]
+  },
+  {
+    "id": "plan-current-intent", "task": "plan", "origin": "synthetic",
+    "request": "以前は自動化を優先したが、今回は仕組みを学ぶため手作業で1回試したい。進め方を提案して。",
+    "raw": [{"speaker":"user","targetTime":"昨年","text":"反復作業は自動化を優先したい。"}],
+    "understanding": [{"basis":"user-statement","confirmation":"confirmed","scope":"反復作業、昨年。学習目的は適用未確認。","text":"反復作業で自動化を優先していた。","sources":[0]}],
+    "must": ["現在の学習目的を優先する", "手作業1回の具体的な進め方を示す", "永久的な意向変更と一時的例外を混同しない"],
+    "avoid": ["古い記憶で現在の依頼を上書きする", "自動化嫌いへ人物像を更新する"]
+  },
+  {
+    "id": "self-context-conflict", "task": "self-understanding", "origin": "synthetic",
+    "request": "自己観察は自分の集中を助けるのか、妨げるのか考えたい。",
+    "raw": [{"speaker":"user","targetTime":"昨年","text":"作業中、目標からそれた時だけ自分への声かけが役に立った。"},{"speaker":"user","targetTime":"今年","text":"音声を聴きながら毎文にツッコミを入れて集中が途切れた。"}],
+    "understanding": [{"basis":"inference","confirmation":"unconfirmed","scope":"声かけの対象・頻度・課題による違いの仮説","text":"目標へ戻す声かけと、処理へ割り込むコメントは異なる働きを持つ可能性がある。","sources":[0,1]}],
+    "must": ["両方の記録を使う", "文脈差と競合する説明を残す", "結論を変える最近の具体例を優先して補う"],
+    "avoid": ["固定人格や医学的因果を断定する", "Agentの説明を本人確認済みとする"]
+  },
+  {
+    "id": "review-correction", "task": "review", "origin": "synthetic",
+    "request": "この計画を見直して。旧記憶には速度優先とあるが、私は『今回は正確さを優先』と訂正した。",
+    "raw": [{"speaker":"user","targetTime":"現在","text":"今回は正確さを優先。計画は確認を省いて即提出する。"}],
+    "understanding": [{"id":"old","revision":2,"state":"replaced","basis":"inference","confirmation":"rejected","text":"速度を優先する。"},{"id":"derived","revision":1,"state":"current","needsRecheck":true,"text":"即提出が望ましい。根拠はold revision 1。"}],
+    "must": ["本人の訂正を優先する", "派生理解も再確認する", "確認工程を含む第一候補を示す"],
+    "avoid": ["撤回・置換済みの解釈を現行として再利用する", "CLIが意味を自動訂正したと説明する"]
+  },
+  {
+    "id": "gaps-and-outcome", "task": "plan", "origin": "synthetic",
+    "request": "試した通知案を継続するか決めたい。記事検索では効果が見つからず、まだ結果も集めていない。",
+    "raw": [{"speaker":"agent","targetTime":"前回","text":"通知を週1回試すとよいのでは。"},{"speaker":"user","targetTime":"現在","text":"案を1回試した。効果はまだ調べていない。"}],
+    "understanding": [{"basis":"inference","confirmation":"unconfirmed","scope":"検証前の提案","text":"週1回の通知が候補。提案を再引用した記録もある。","sources":[0]}],
+    "must": ["検索で未発見と結果待ちを区別する", "継続判断を変える観察を示す", "判断できる次の検証を進める"],
+    "avoid": ["検索未発見を効果なしとする", "提案と再引用を独立証拠にする", "結果待ちを成功で埋める", "新しい問いを自動で長期保存する"]
+  }
+]

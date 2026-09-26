@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { loadArchive } from './archive.mjs';
 import { syncArchive } from './sync.mjs';
 import { openIndex, indexState } from './search-index.mjs';
+import { memorySummary } from './memory.mjs';
 import { requireWorkspace } from './workspace.mjs';
 
 const archivePath = 'archive/articles.json';
@@ -58,7 +59,10 @@ export async function startSession(root, { projectUrl, syncMode = 'none' }, {
     '- .agents/skills/article-explore/SKILL.md: 記事・関連記録を探索\n' +
     '- .agents/skills/knowledge-deepen/SKILL.md: 意味・関係・矛盾を深掘り\n' +
     '- .agents/skills/knowledge-review/SKILL.md: 目的や基準に照らして計画・判断を評価');
-  try { print(readFileSync(join(root, 'memory/index.md'), 'utf8')); }
+  try {
+    print(readFileSync(join(root, 'memory/index.md'), 'utf8'));
+    print(`記憶記録の状態: ${JSON.stringify(memorySummary(root))}。必要な記録だけ memory:search / memory:read で参照してください。`);
+  }
   catch (error) {
     if (error.code === 'ENOENT') print('ローカル記憶は未作成です。記憶なしで進めます。');
     else { print(`記憶の読み取り失敗: ${error.message}`); ok = false; }

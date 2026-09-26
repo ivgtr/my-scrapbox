@@ -8,6 +8,7 @@ import { rebuildIndex, openIndex, search, links } from '../lib/search-index.mjs'
 import { updateWorkspace } from '../lib/workspace-update.mjs';
 import { initWorkspace } from '../lib/workspace.mjs';
 import { archiveStatus, startSession } from '../lib/session.mjs';
+import { searchMemory, readMemory, saveMemory, indexMemory } from '../lib/memory.mjs';
 
 const printJson = value => console.log(JSON.stringify(value, null, 2));
 const commands = {
@@ -33,6 +34,30 @@ const commands = {
       }
     }
   },
+  'memory:search': {
+    arguments: 'memory-search', project: true,
+    run: async options => printJson(searchMemory(root, options.query, options))
+  },
+  'memory:read': {
+    arguments: 'title', project: true,
+    run: async ([id], { projectUrl }) => printJson(readMemory(root, projectUrl, id))
+  },
+  'memory:evidence': {
+    arguments: 'title', project: true,
+    run: async ([id], { projectUrl }) => printJson(readMemory(root, projectUrl, id, true))
+  },
+  'memory:create': {
+    arguments: 'memory-create', project: true,
+    run: async ({ file }) => printJson(saveMemory(root, JSON.parse(readFileSync(file, 'utf8'))))
+  },
+  'memory:update': {
+    arguments: 'memory-update', project: true,
+    run: async ({ file, id, expectRevision }) => printJson(saveMemory(root, JSON.parse(readFileSync(file, 'utf8')), { id, expectRevision }))
+  },
+  'memory:index': {
+    arguments: 'none', project: true,
+    run: async () => printJson(indexMemory(root))
+  },
   sync: {
     arguments: 'sync', project: true,
     run: async (args, { projectUrl }) => {
@@ -53,10 +78,11 @@ const commands = {
     run: async (_, { archive }) => { rebuildIndex(root, archive); console.log('索引を再生成しました。'); }
   },
   read: {
-    arguments: 'title', project: true, archive: true,
-    run: async ([title], { projectUrl, archive }) => {
+    arguments: 'read', project: true, archive: true,
+    run: async ({ title, json }, { projectUrl, archive }) => {
       const page = archive.data.articles.find(p => normalizeTitle(p.title) === normalizeTitle(title));
       if (!page) throw new Error('このタイトルの本文はアーカイブにありません。\n利用者向けの次の操作: npm run links で被リンクを確認できます。');
+      if (json) { printJson({ projectUrl, url: pageUrl(projectUrl, page.title), title: page.title, pageId: page.id, commitId: page.commitId, fetchedAt: page.fetchedAt, syncedAt: archive.data.syncedAt, updated: page.updated, lines: page.lines }); return; }
       console.log(`${pageUrl(projectUrl, page.title)}\n取得時点: ${page.fetchedAt}\n更新日時: ${page.updated}\npageId: ${page.id}\ncommitId: ${page.commitId}\n\n${page.lines.map(l => l.text).join('\n')}`);
     }
   },
@@ -74,19 +100,45 @@ const commands = {
 };
 
 function validateArguments(command, args) {
-  if (command.arguments === 'search') {
+  if (command.arguments === 'read') {
+    if (!args[0]?.trim() || args[0].startsWith('--') || args.length > 2 || (args.length === 2 && args[1] !== '--json')) throw new Error('read はタイトルと省略可能な --json を指定してください。');
+    return { title: args[0], json: args.length === 2 };
+  }
+  if (['memory-create', 'memory-update'].includes(command.arguments)) {
+    const update = command.arguments === 'memory-update';
+    const id = update ? args[0] : undefined;
+    const options = args.slice(update ? 1 : 0), seen = new Set(), result = { id };
+    if (update && !id?.match(/^[a-z0-9][a-z0-9-]{0,79}$/u)) throw new Error('memory:update のIDが不正です。');
+    for (let i = 0; i < options.length; i += 2) {
+      const key = options[i], value = options[i + 1];
+      if (!['--file', ...(update ? ['--expect-revision'] : [])].includes(key) || seen.has(key) || !value?.trim() || value.startsWith('--')) throw new Error('記憶保存のオプションが不正です。');
+      seen.add(key);
+      if (key === '--file') result.file = value;
+      else {
+        if (!/^\d+$/u.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) throw new Error('--expect-revision は正の安全な整数です。');
+        result.expectRevision = Number(value);
+      }
+    }
+    if (!result.file || (update && !result.expectRevision)) throw new Error('--file と、更新時は --expect-revision が必要です。');
+    return result;
+  }
+  if (command.arguments === 'search' || command.arguments === 'memory-search') {
     if (!args.length || !args[0].trim() || args[0].startsWith('--')) {
       throw new Error('検索語を1つ指定してください。空白を含む場合は引用符で囲んでください。');
     }
     const result = { query: args[0], limit: 20, offset: 0 };
+    if (command.arguments === 'memory-search') result.all = false;
     const seen = new Set();
-    for (let i = 1; i < args.length; i += 2) {
+    for (let i = 1; i < args.length; i++) {
       const option = args[i];
+      if (option === '--all' && command.arguments === 'memory-search' && !seen.has(option)) {
+        seen.add(option); result.all = true; continue;
+      }
       if (!['--limit', '--offset'].includes(option) || seen.has(option)) {
         throw new Error('search のオプションは --limit と --offset のみで、それぞれ1回指定できます。');
       }
       seen.add(option);
-      const value = args[i + 1];
+      const value = args[++i];
       const number = Number(value);
       if (!value || !/^\d+$/u.test(value) || !Number.isSafeInteger(number) ||
           (option === '--limit' && (number < 1 || number > 100))) {
@@ -119,5 +171,5 @@ try {
   if (command.archive) context.archive = loadArchive(root, context.projectUrl);
   if (command.index) context.db = db = openIndex(root, context.archive);
   await command.run(validatedArgs, context);
-} catch (error) { console.error(error.message); process.exitCode = 1; }
+} catch (error) { if (error.partialResult) printJson(error.partialResult); console.error(error.message); process.exitCode = 1; }
 finally { db?.close(); }

@@ -5,9 +5,12 @@ import { dirname, join } from 'node:path';
 export const hash = text => createHash('sha256').update(text).digest('hex');
 export const normalizeTitle = title => title.replaceAll(' ', '_').toLowerCase();
 export const pageUrl = (projectUrl, title) => `${projectUrl}/${encodeURIComponent(title.replaceAll(' ', '_'))}`;
-export function atomicWrite(path, text, mode = 0o600) {
+export function atomicWrite(path, text, mode = 0o600, temporaryDirectory = dirname(path)) {
   mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${randomUUID()}.tmp`;
+  // Keep the existing names used by sync recovery; memory puts its temp outside records.
+  const temporary = temporaryDirectory === dirname(path)
+    ? `${path}.${randomUUID()}.tmp`
+    : join(temporaryDirectory, `.atomic-${randomUUID()}.tmp`);
   try {
     writeFileSync(temporary, text, { flag: 'wx', mode });
     renameSync(temporary, path);

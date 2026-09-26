@@ -44,3 +44,20 @@ npm run links -- "タイトル"
 `npm run status` はJSONの `projectUrl`・`syncedAt`（記事取得日時）・`checkedAt`（差分確認日時、不明ならnull）・`count`・`index` を表示する。`index` はready/missing/stale/corrupt。`npm run memory` はローカル記憶の入口を表示する。どちらも引数は不要。
 
 これらの参照はネットワークを使わず、未取得や未同期の変更は検索できない。検索・リンク参照では必要に応じてローカル索引を再生成するが、記事は変更しない。古さや不足は報告し、同期・復旧・オンライン編集・記憶保存はAGENTS.mdと該当Skillの権限境界に従う。
+
+## 理解の検索と根拠
+
+```sh
+npm run read -- "タイトル" --json
+npm run memory:search -- "検索語" --limit 20 --offset 0
+npm run memory:read -- <id>
+npm run memory:evidence -- <id>
+```
+
+記事readのJSONはprojectUrl・url・title・pageId・commitId・fetchedAt・syncedAt・updated・lines（idとtext）を持つ。従来のテキスト出力は維持する。
+
+記憶検索は本文・タイトル・条件・例外のAND部分一致。ページ形式とlimit/offsetは記事検索と同じで、タイトル・ID順。既定はcurrent、`--all` でreplaced/withdrawnを含む。snippetは本文先頭最大160コードポイント。既存の自由形式Markdownは対象外なので、`npm run memory` のリンクから必要なものを読む。
+
+memory:readはmetadata・body・evidence、memory:evidenceは再帰的な根拠情報をJSONで返す。evidenceのneedsRecheckと各sourcesのstatusを確認する。記事版・行・記憶revisionの変化は再確認が必要。currentの原文は現行取得分であり、古い参照版の復元ではない。dialogueのrecordedは発言抜粋の保存、unknown-timeは日時不明を表し、外部事実の保証ではない。sourcesが空の場合も解釈の正しさを保証しない。
+
+記憶の形成・訂正が依頼範囲に入る場合だけ、READMEの「構造化した記憶の操作」にある現行入力スキーマと保存条件を参照する。保存前に現行記録と原文を確認し、updateにはexpect-revisionを渡す。参照・検索だけでは保存しない。

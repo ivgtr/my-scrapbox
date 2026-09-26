@@ -21,7 +21,13 @@
     "read": "node src/cli/local.mjs read",
     "links": "node src/cli/local.mjs links",
     "status": "node src/cli/local.mjs status",
-    "index:rebuild": "node src/cli/local.mjs index:rebuild"
+    "index:rebuild": "node src/cli/local.mjs index:rebuild",
+    "memory:search": "node src/cli/local.mjs memory:search",
+    "memory:read": "node src/cli/local.mjs memory:read",
+    "memory:evidence": "node src/cli/local.mjs memory:evidence",
+    "memory:create": "node src/cli/local.mjs memory:create",
+    "memory:update": "node src/cli/local.mjs memory:update",
+    "memory:index": "node src/cli/local.mjs memory:index"
   },
   "dependencies": {
     "@helpfeel/cosense-cli": "1.15.0"
