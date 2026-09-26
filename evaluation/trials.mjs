@@ -1,6 +1,6 @@
 // Manual runtime boundary. This module never launches an agent or guesses provenance.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { hash } from '../src/lib/archive.mjs';
 import { fixedInput } from './prepare.mjs';
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
@@ -48,7 +48,7 @@ export function startTrial(directory, { trialId, method, input, run = null, fixt
   return path;
 }
 export const runtimeChecks = ['conversation', 'automaticContext', 'tools', 'referenceScope', 'modelSettings', 'rawOutput'];
-export function bindLaunch(path, { childId, runtime, sentInput, checks, order }) {
+export function bindLaunch(path, { childId, runtime, sentInput, checks, order, delivery }) {
   const trial = pending(path);
   text(childId); text(runtime);
   if (!Number.isInteger(order) || order < 1) throw new Error('実行順は正の整数です。');
@@ -60,7 +60,18 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order })
     if (!existsSync(join(dirname(path), entry.name, 'result.json'))) throw new Error('同時に起動できる子は1つです。');
     if (previous.childId === childId || previous.order === order) throw new Error('子の識別子・実行順は再利用できません。');
   }
-  if (hash(sentInput) !== trial.inputHash || sentInput !== readFileSync(join(path, 'input.txt'), 'utf8')) throw new Error('送信入力が固定入力と一致しません。');
+  text(sentInput);
+  if (!['inline', 'file'].includes(delivery)) throw new Error('入力の渡し方が不正です。');
+  const input = readFileSync(join(path, 'input.txt'), 'utf8');
+  if (hash(input) !== trial.inputHash) throw new Error('固定入力が変更されています。');
+  if (delivery === 'inline') {
+    if (sentInput !== input) throw new Error('送信入力が固定入力と一致しません。');
+  } else {
+    const envelope = JSON.parse(sentInput);
+    exact(envelope, ['inputPath', 'outputPath', 'instructions']);
+    text(envelope.inputPath); text(envelope.outputPath); text(envelope.instructions);
+    if (envelope.inputPath !== resolve(path, 'input.txt') || envelope.outputPath !== resolve(path, 'runtime', 'final-output.json')) throw new Error('入力・原本の指定パスが不正です。');
+  }
   exact(checks, runtimeChecks);
   const evidence = {};
   for (const key of runtimeChecks) {
@@ -80,7 +91,7 @@ export function bindLaunch(path, { childId, runtime, sentInput, checks, order })
     if (!bytes.length) throw new Error('成立根拠が空です。');
     evidence[key] = { status: 'verified', value: checks[key].value, sha256: hash(bytes), bytes: bytes.toString('base64'), reason: null };
   }
-  save(join(path, 'launch.json'), { trialId: trial.trialId, childId, runtime, order, launchedAt: new Date().toISOString(), sentInput, inputHash: hash(sentInput), evidence });
+  save(join(path, 'launch.json'), { trialId: trial.trialId, childId, runtime, order, launchedAt: new Date().toISOString(), delivery, sentInput, sentInputHash: hash(sentInput), inputHash: trial.inputHash, evidence });
 }
 function pending(path) {
   if (existsSync(join(path, 'result.json'))) throw new Error('終了済み試行は変更できません。');
@@ -112,7 +123,8 @@ export function captureFixed(path, { sourcePath, sourceKind, eventPath, executio
   // Capture independently: missing launch/output must not discard acquired events or bytes.
   let bytes = null;
   try {
-    if (sourceKind !== 'runtime-final') throw new Error('要約・自己申告を回答原本にはできません。');
+    if (!['runtime-final', 'designated-artifact'].includes(sourceKind)) throw new Error('要約・自己申告を回答原本にはできません。');
+    if (sourceKind === 'designated-artifact' && resolve(sourcePath) !== resolve(path, 'runtime', 'final-output.json')) throw new Error('指定された回答原本ではありません。');
     bytes = readFileSync(sourcePath);
     writeFileSync(join(path, 'final-output.json'), bytes, { flag: 'wx', mode: 0o600 });
   } catch (error) { errors.push(error.message); }
@@ -142,7 +154,7 @@ export function captureFixed(path, { sourcePath, sourceKind, eventPath, executio
   } catch (error) { errors.push(`起動証跡不足: ${error.message}`); }
   if (executionStatus !== 'completed') errors.push(`実行状態: ${executionStatus}`);
   const status = errors.length ? 'invalid' : 'completed', reason = errors.length ? errors.join(' / ') : null;
-  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, outputStatus, executionStatus, launchStatus, unconfirmedChecks, comparison: 'parent-unassessed', answerHash: answer === null ? null : hash(answer) });
+  save(join(path, 'result.json'), { trialId: trial.trialId, status, reason, sourceKind, outputStatus, executionStatus, launchStatus, unconfirmedChecks, comparison: 'parent-unassessed', answerHash: answer === null ? null : hash(answer) });
   return { status, reason };
 }
 export function captureCycle(path, { eventPath }) {
